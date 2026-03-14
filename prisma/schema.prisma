@@ -1,0 +1,390 @@
+// Feedlot Farm Dashboard — Prisma Schema
+// Date: 2026-03-13
+// Status: signed-off
+// Models: 16 (15 domain + 1 NextAuth-required VerificationToken)
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ─── Enums ───────────────────────────────────────────────────────────────────
+
+enum Role {
+  OWNER
+  WORKER
+}
+
+enum CowStatus {
+  ACTIVE
+  READY_TO_SELL
+  SOLD
+  DEAD
+  LOSS
+}
+
+enum BatchStatus {
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+enum FeedUnit {
+  KG
+  BALES
+  BAGS
+}
+
+enum HealthEventType {
+  TREATMENT
+  MEDICINE
+  VET_VISIT
+}
+
+enum ExpenseCategory {
+  FEED
+  MEDICINE_VET
+  TRANSPORT
+  SALARIES
+  MAINTENANCE
+  UTILITIES
+  OTHER
+}
+
+enum TaskAssignment {
+  OWNER
+  WORKER
+  BOTH
+}
+
+enum TaskStatus {
+  OPEN
+  IN_PROGRESS
+  DONE
+}
+
+enum AllocationMethod {
+  PROPORTIONAL_WEIGHT
+  EQUAL_SPLIT
+}
+
+// ─── Auth ─────────────────────────────────────────────────────────────────────
+
+model User {
+  id           String   @id @default(cuid())
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  email        String   @unique
+  passwordHash String
+  name         String
+  role         Role
+  isActive     Boolean  @default(true)
+
+  weightLogs     WeightLog[]
+  healthRecords  HealthRecord[]
+  penTransfers   PenTransfer[]
+  expenseEntries ExpenseEntry[]
+  tasks          Task[]         @relation("TaskCreatedBy")
+
+  @@index([email])
+  @@index([role, isActive])
+}
+
+// NextAuth.js — required for email-based password reset via Resend.
+// JWT session strategy: no Session or Account models needed.
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+// ─── Pens ─────────────────────────────────────────────────────────────────────
+
+model Pen {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  name      String
+  capacity  Int      // informational — no DB-level enforcement
+  isActive  Boolean  @default(true)
+
+  cows          Cow[]
+  rations       FeedRation[]
+  transfersFrom PenTransfer[] @relation("TransferFromPen")
+  transfersTo   PenTransfer[] @relation("TransferToPen")
+
+  @@index([isActive])
+}
+
+// Audit log of every pen reassignment per cow.
+// fromPenId is null on initial assignment (cow registered directly into pen).
+model PenTransfer {
+  id              String   @id @default(cuid())
+  createdAt       DateTime @default(now())
+  cowId           String
+  fromPenId       String?  // null = initial assignment at registration
+  toPenId         String
+  transferDate    DateTime
+  transferredById String
+
+  cow           Cow  @relation(fields: [cowId], references: [id])
+  fromPen       Pen? @relation("TransferFromPen", fields: [fromPenId], references: [id])
+  toPen         Pen  @relation("TransferToPen", fields: [toPenId], references: [id])
+  transferredBy User @relation(fields: [transferredById], references: [id])
+
+  @@index([cowId])
+  @@index([transferDate])
+}
+
+// ─── Batches ──────────────────────────────────────────────────────────────────
+
+// Single-farm model: only one Batch may have status=ACTIVE at a time.
+// Enforced at the application layer in the Batch service (not a DB constraint).
+// ::ASSUMPTION:: One-active-batch rule is app-enforced, not DB-constrained.
+model Batch {
+  id              String      @id @default(cuid())
+  createdAt       DateTime    @default(now())
+  updatedAt       DateTime    @updatedAt
+  name            String
+  startDate       DateTime
+  expectedEndDate DateTime    // set to startDate + cycleDays at creation
+  cycleDays       Int         @default(90) // per-batch override of AppSettings.sellCycleDays
+  status          BatchStatus @default(ACTIVE)
+  purchaseSource  String?
+  notes           String?
+
+  cows     Cow[]
+  expenses ExpenseEntry[]
+  sales    SaleRecord[]
+
+  @@index([status])
+  @@index([startDate])
+}
+
+// ─── Cattle ───────────────────────────────────────────────────────────────────
+
+model Cow {
+  id             String    @id @default(cuid())
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  tagId          String    @unique
+  breed          String
+  purchaseDate   DateTime
+  purchaseWeight Float     // kg — used for proportional expense allocation
+  purchasePrice  Float     // KES
+  penId          String
+  batchId        String
+  status         CowStatus @default(ACTIVE)
+
+  // Populated when status transitions to SOLD
+  soldDate  DateTime?
+  soldWeight Float?   // kg — also written as a WeightLog row (isSaleWeight: true)
+  soldPrice  Float?   // KES
+  soldBuyer  String?
+
+  // Populated when status transitions to DEAD or LOSS
+  exitReason String?
+  exitDate   DateTime?
+
+  pen          Pen           @relation(fields: [penId], references: [id])
+  batch        Batch         @relation(fields: [batchId], references: [id])
+  weightLogs   WeightLog[]
+  healthRecords HealthRecord[]
+  penTransfers PenTransfer[]
+
+  @@index([batchId, status])
+  @@index([penId, status])
+  @@index([tagId])
+}
+
+// Weekly (or more frequent) weight records.
+// isSaleWeight: true entries are system-generated at sale time; excluded from
+// the "due for weighing" alert and the worker weekly-logging view.
+model WeightLog {
+  id           String   @id @default(cuid())
+  createdAt    DateTime @default(now())
+  cowId        String
+  weight       Float    // kg
+  loggedAt     DateTime // date of the weighing event (not insert timestamp)
+  loggedById   String
+  isSaleWeight Boolean  @default(false)
+  notes        String?
+
+  cow      Cow  @relation(fields: [cowId], references: [id])
+  loggedBy User @relation(fields: [loggedById], references: [id])
+
+  @@unique([cowId, loggedAt])
+  @@index([cowId, loggedAt])
+  @@index([cowId, isSaleWeight])
+}
+
+// ─── Health ───────────────────────────────────────────────────────────────────
+
+model HealthRecord {
+  id           String          @id @default(cuid())
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  cowId        String
+  date         DateTime        // date of the health event
+  type         HealthEventType
+  description  String
+  medicine     String?
+  dosage       String?
+  veterinarian String?
+  cost         Float?          // KES; nullable — not all events have a billable cost
+  followUpDate DateTime?       // triggers alert when <= 3 days from today
+  recordedById String
+
+  cow        Cow  @relation(fields: [cowId], references: [id])
+  recordedBy User @relation(fields: [recordedById], references: [id])
+
+  @@index([cowId])
+  @@index([followUpDate]) // alert query scans this index
+}
+
+// ─── Feed ─────────────────────────────────────────────────────────────────────
+
+model FeedItem {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  name      String
+  unit      FeedUnit
+  isActive  Boolean  @default(true)
+
+  stockEntries FeedStockEntry[]
+  rations      FeedRation[]
+
+  @@index([isActive])
+}
+
+// Each stock purchase is a separate entry.
+// costPerUnit is computed and stored at insert (costTotal / quantity).
+// ::ASSUMPTION:: costPerUnit uses insert-time price, not a rolling average.
+// Latest-purchase-price method documented as Phase 1 known limitation.
+model FeedStockEntry {
+  id           String   @id @default(cuid())
+  createdAt    DateTime @default(now())
+  feedItemId   String
+  quantity     Float    // in FeedItem.unit
+  purchaseDate DateTime
+  costTotal    Float    // KES
+  costPerUnit  Float    // KES per unit — persisted at insert for query efficiency
+  supplier     String?
+
+  feedItem FeedItem @relation(fields: [feedItemId], references: [id])
+
+  @@index([feedItemId, purchaseDate])
+}
+
+// Active ration: effectiveTo IS NULL.
+// Setting a new ration closes the previous row (sets effectiveTo = now)
+// and inserts a new row with effectiveTo = null.
+// ::ASSUMPTION:: One active ration per pen per feed item at any time.
+model FeedRation {
+  id                   String    @id @default(cuid())
+  createdAt            DateTime  @default(now())
+  penId                String
+  feedItemId           String
+  quantityPerCowPerDay Float     // in FeedItem.unit
+  effectiveFrom        DateTime
+  effectiveTo          DateTime? // null = currently active ration
+
+  pen      Pen      @relation(fields: [penId], references: [id])
+  feedItem FeedItem @relation(fields: [feedItemId], references: [id])
+
+  @@index([penId, feedItemId, effectiveTo]) // fast active-ration lookup
+}
+
+// ─── Finance ──────────────────────────────────────────────────────────────────
+
+model ExpenseEntry {
+  id           String          @id @default(cuid())
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  date         DateTime
+  category     ExpenseCategory
+  amount       Float           // KES
+  description  String
+  invoiceRef   String?
+  batchId      String?         // nullable: some expenses may not be batch-linked
+  recordedById String
+
+  batch      Batch? @relation(fields: [batchId], references: [id])
+  recordedBy User   @relation(fields: [recordedById], references: [id])
+
+  @@index([batchId, category])
+  @@index([date, category])
+}
+
+model MonthlyBudget {
+  id       String          @id @default(cuid())
+  year     Int
+  month    Int             // 1–12
+  category ExpenseCategory
+  amount   Float           // KES
+
+  @@unique([year, month, category])
+  @@index([year, month])
+}
+
+// SaleRecord.transportCost is contra-revenue (not an operating expense).
+// Net revenue = totalAmount - transportCost.
+// Gross profit = net revenue - total batch ExpenseEntry amounts.
+model SaleRecord {
+  id            String   @id @default(cuid())
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  batchId       String
+  date          DateTime
+  buyer         String
+  pricePerKg    Float    // KES
+  totalKg       Float
+  totalAmount   Float    // KES — gross sale revenue (pricePerKg × totalKg)
+  transportCost Float    @default(0) // KES — contra-revenue; stored separately for reporting
+  notes         String?
+
+  batch Batch @relation(fields: [batchId], references: [id])
+
+  @@index([batchId])
+  @@index([date])
+}
+
+// ─── Tasks ────────────────────────────────────────────────────────────────────
+
+// Manual OWNER-created tasks only.
+// System-generated alerts are computed at query time — not persisted as rows.
+model Task {
+  id          String         @id @default(cuid())
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  title       String
+  description String?
+  dueDate     DateTime?
+  assignedTo  TaskAssignment
+  status      TaskStatus     @default(OPEN)
+  createdById String
+
+  createdBy User @relation("TaskCreatedBy", fields: [createdById], references: [id])
+
+  @@index([status, assignedTo])
+  @@index([dueDate])
+}
+
+// ─── Settings ─────────────────────────────────────────────────────────────────
+
+// Singleton row. Application bootstraps this row on first run with id="global".
+// ::ASSUMPTION:: AppSettings singleton is app-bootstrapped, not seeded via migration.
+model AppSettings {
+  id                      String           @id @default("global")
+  marketPricePerKg        Float            @default(0)  // KES; set manually by OWNER
+  sellCycleDays           Int              @default(90) // global default; Batch.cycleDays overrides per-batch
+  expenseAllocationMethod AllocationMethod @default(PROPORTIONAL_WEIGHT)
+  updatedAt               DateTime         @updatedAt
+}
