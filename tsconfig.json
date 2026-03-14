@@ -28,7 +28,8 @@
     },
     "noImplicitAny": true,
     "strictNullChecks": true,
-    "noUncheckedIndexedAccess": true
+    "noUncheckedIndexedAccess": true,
+    "types": ["jest", "node"]
   },
   "include": [
     "next-env.d.ts",
