@@ -1,0 +1,7 @@
+{
+  "exceptions": [
+    "https://github.com/advisories/GHSA-9g9p-9gw9-jx7f",
+    "https://github.com/advisories/GHSA-h25m-26qc-wcjf"
+  ],
+  "_comment": "Both CVEs affect self-hosted Next.js only. This app deploys to Vercel. Accepted by project owner 2026-03-15."
+}
