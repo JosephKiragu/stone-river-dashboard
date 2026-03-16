@@ -55,7 +55,7 @@ import { prisma as prismaClient } from '@/lib/prisma'
 const mockGetServerSession = getServerSession as jest.MockedFunction<typeof getServerSession>
 const mockBcryptHash = bcrypt.hash as jest.MockedFunction<typeof bcrypt.hash>
 const mockBcryptCompare = bcrypt.compare as jest.MockedFunction<typeof bcrypt.compare>
-const mockPrisma = prismaClient as {
+const mockPrisma = prismaClient as unknown as {
   user: {
     findMany: jest.Mock
     findUnique: jest.Mock
@@ -100,8 +100,8 @@ describe('auth module routes', () => {
   beforeEach(() => {
     jest.resetAllMocks()
     mockGetServerSession.mockResolvedValue(ownerSession)
-    mockBcryptHash.mockResolvedValue('hashed-value')
-    mockBcryptCompare.mockResolvedValue(true)
+    mockBcryptHash.mockResolvedValue('hashed-value' as unknown as never)
+    mockBcryptCompare.mockResolvedValue(true as unknown as never)
     mockPrisma.$transaction.mockImplementation(async (operations: unknown[]) => Promise.all(operations))
     process.env.RESEND_API_KEY = 'resend-key'
     process.env.NEXTAUTH_URL = 'http://localhost:3000'
@@ -137,6 +137,37 @@ describe('auth module routes', () => {
       role: Role.WORKER,
       isActive: true,
     })
+    expect(mockBcryptHash).toHaveBeenCalledWith('password123', 12)
+  })
+
+  it('authorize callback: created worker credentials authenticate successfully', async () => {
+    mockPrisma.user.findUnique.mockResolvedValue({
+      id: 'worker-1',
+      email: 'worker1@example.com',
+      name: 'Worker One',
+      role: Role.WORKER,
+      passwordHash: 'hashed-value',
+      isActive: true,
+    })
+    mockBcryptCompare.mockResolvedValue(true as unknown as never)
+
+    const provider = authOptions.providers?.[0] as unknown as {
+      authorize?: (credentials: { email: string; password: string }) => Promise<unknown>
+      options?: {
+        authorize?: (credentials: { email: string; password: string }) => Promise<unknown>
+      }
+    }
+    const authorize = provider.options?.authorize ?? provider.authorize
+
+    expect(authorize).toBeDefined()
+
+    const result = await authorize!({
+      email: 'worker1@example.com',
+      password: 'password123',
+    })
+
+    expect(result).not.toBeNull()
+    expect(result).toEqual(expect.objectContaining({ id: 'worker-1', role: Role.WORKER }))
   })
 
   it('POST /api/users: WORKER caller -> 403', async () => {
@@ -247,13 +278,13 @@ describe('auth module routes', () => {
   it('PUT /api/users/[id]: OWNER updates worker -> 200', async () => {
     mockPrisma.user.findUnique
       .mockResolvedValueOnce({
-        id: 'worker-1',
+        id: 'c1234567890abcdefghijklmn',
         role: Role.WORKER,
         email: 'worker1@example.com',
       })
       .mockResolvedValueOnce(null)
     mockPrisma.user.update.mockResolvedValue({
-      id: 'worker-1',
+      id: 'c1234567890abcdefghijklmn',
       name: 'Worker Updated',
       email: 'worker1@example.com',
       role: Role.WORKER,
@@ -261,19 +292,19 @@ describe('auth module routes', () => {
     })
 
     const response = await updateWorkerPUT(
-      jsonRequest('http://localhost/api/users/worker-1', 'PUT', { name: 'Worker Updated' }) as never,
-      { params: { id: 'worker-1' } },
+      jsonRequest('http://localhost/api/users/c1234567890abcdefghijklmn', 'PUT', { name: 'Worker Updated' }) as never,
+      { params: { id: 'c1234567890abcdefghijklmn' } },
     )
 
     expect(response.status).toBe(200)
   })
 
   it('PUT /api/users/[id]: OWNER cannot update another OWNER -> 403', async () => {
-    mockPrisma.user.findUnique.mockResolvedValue({ id: 'owner-2', role: Role.OWNER })
+    mockPrisma.user.findUnique.mockResolvedValue({ id: 'c2234567890abcdefghijklmn', role: Role.OWNER })
 
     const response = await updateWorkerPUT(
-      jsonRequest('http://localhost/api/users/owner-2', 'PUT', { name: 'Nope' }) as never,
-      { params: { id: 'owner-2' } },
+      jsonRequest('http://localhost/api/users/c2234567890abcdefghijklmn', 'PUT', { name: 'Nope' }) as never,
+      { params: { id: 'c2234567890abcdefghijklmn' } },
     )
 
     expect(response.status).toBe(403)
@@ -283,8 +314,8 @@ describe('auth module routes', () => {
     mockPrisma.user.findUnique.mockResolvedValue(null)
 
     const response = await updateWorkerPUT(
-      jsonRequest('http://localhost/api/users/missing', 'PUT', { name: 'Nope' }) as never,
-      { params: { id: 'missing' } },
+      jsonRequest('http://localhost/api/users/c3234567890abcdefghijklmn', 'PUT', { name: 'Nope' }) as never,
+      { params: { id: 'c3234567890abcdefghijklmn' } },
     )
 
     expect(response.status).toBe(404)
@@ -294,30 +325,40 @@ describe('auth module routes', () => {
     mockGetServerSession.mockResolvedValue(workerSession)
 
     const response = await updateWorkerPUT(
-      jsonRequest('http://localhost/api/users/worker-1', 'PUT', { name: 'Worker Updated' }) as never,
-      { params: { id: 'worker-1' } },
+      jsonRequest('http://localhost/api/users/c1234567890abcdefghijklmn', 'PUT', { name: 'Worker Updated' }) as never,
+      { params: { id: 'c1234567890abcdefghijklmn' } },
     )
 
     expect(response.status).toBe(403)
   })
 
-  it('PATCH /api/users/[id]/deactivate: OWNER deactivates WORKER -> 200', async () => {
-    mockPrisma.user.findUnique.mockResolvedValue({ id: 'worker-1', role: Role.WORKER })
-    mockPrisma.user.update.mockResolvedValue({ id: 'worker-1', isActive: false })
+  it('PUT /api/users/[id]: invalid CUID -> 400', async () => {
+    const response = await updateWorkerPUT(
+      jsonRequest('http://localhost/api/users/not-a-cuid', 'PUT', { name: 'Worker Updated' }) as never,
+      { params: { id: 'not-a-cuid' } },
+    )
 
-    const response = await deactivateWorkerPATCH(new Request('http://localhost/api/users/worker-1/deactivate'), {
-      params: { id: 'worker-1' },
+    expect(response.status).toBe(400)
+    await expect(response.json()).resolves.toEqual({ error: 'Invalid id' })
+  })
+
+  it('PATCH /api/users/[id]/deactivate: OWNER deactivates WORKER -> 200', async () => {
+    mockPrisma.user.findUnique.mockResolvedValue({ id: 'c1234567890abcdefghijklmn', role: Role.WORKER })
+    mockPrisma.user.update.mockResolvedValue({ id: 'c1234567890abcdefghijklmn', isActive: false })
+
+    const response = await deactivateWorkerPATCH(new Request('http://localhost/api/users/c1234567890abcdefghijklmn/deactivate'), {
+      params: { id: 'c1234567890abcdefghijklmn' },
     })
 
     expect(response.status).toBe(200)
-    await expect(response.json()).resolves.toEqual({ id: 'worker-1', isActive: false })
+    await expect(response.json()).resolves.toEqual({ id: 'c1234567890abcdefghijklmn', isActive: false })
   })
 
   it('PATCH /api/users/[id]/deactivate: OWNER cannot deactivate OWNER -> 403', async () => {
     mockPrisma.user.findUnique.mockResolvedValue({ id: 'owner-2', role: Role.OWNER })
 
-    const response = await deactivateWorkerPATCH(new Request('http://localhost/api/users/owner-2/deactivate'), {
-      params: { id: 'owner-2' },
+    const response = await deactivateWorkerPATCH(new Request('http://localhost/api/users/c2234567890abcdefghijklmn/deactivate'), {
+      params: { id: 'c2234567890abcdefghijklmn' },
     })
 
     expect(response.status).toBe(403)
@@ -326,11 +367,20 @@ describe('auth module routes', () => {
   it('PATCH /api/users/[id]/deactivate: WORKER caller -> 403', async () => {
     mockGetServerSession.mockResolvedValue(workerSession)
 
-    const response = await deactivateWorkerPATCH(new Request('http://localhost/api/users/worker-1/deactivate'), {
-      params: { id: 'worker-1' },
+    const response = await deactivateWorkerPATCH(new Request('http://localhost/api/users/c1234567890abcdefghijklmn/deactivate'), {
+      params: { id: 'c1234567890abcdefghijklmn' },
     })
 
     expect(response.status).toBe(403)
+  })
+
+  it('PATCH /api/users/[id]/deactivate: invalid CUID -> 400', async () => {
+    const response = await deactivateWorkerPATCH(new Request('http://localhost/api/users/not-a-cuid/deactivate'), {
+      params: { id: 'not-a-cuid' },
+    })
+
+    expect(response.status).toBe(400)
+    await expect(response.json()).resolves.toEqual({ error: 'Invalid id' })
   })
 
   it('authorize callback rejects deactivated users', async () => {
@@ -383,7 +433,7 @@ describe('auth module routes', () => {
       role: Role.OWNER,
       isActive: true,
     })
-    mockBcryptCompare.mockResolvedValue(true)
+    mockBcryptCompare.mockResolvedValue(true as unknown as never)
     mockPrisma.user.update.mockResolvedValue({
       id: 'owner-1',
       name: 'Owner',
@@ -409,7 +459,7 @@ describe('auth module routes', () => {
       role: Role.OWNER,
       isActive: true,
     })
-    mockBcryptCompare.mockResolvedValue(false)
+    mockBcryptCompare.mockResolvedValue(false as unknown as never)
 
     const response = await usersMePUT(
       jsonRequest('http://localhost/api/users/me', 'PUT', {
