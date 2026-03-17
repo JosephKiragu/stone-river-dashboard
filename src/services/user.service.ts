@@ -1,4 +1,4 @@
-import { Role, User } from '@prisma/client'
+import { Prisma, Role, User } from '@prisma/client'
 import bcrypt from 'bcryptjs'
 import crypto from 'node:crypto'
 import { Resend } from 'resend'
@@ -67,6 +67,10 @@ function appErrorFromZod(error: z.ZodError): AppError {
   return new AppError(issue?.message ?? 'Invalid request payload', 400, field)
 }
 
+function isUniqueConstraintError(error: unknown): boolean {
+  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002'
+}
+
 export async function listWorkers(): Promise<PublicWorker[]> {
   return prisma.user.findMany({
     where: { role: Role.WORKER },
@@ -96,22 +100,30 @@ export async function createWorker(input: unknown): Promise<PublicWorker> {
 
   const passwordHash = await bcrypt.hash(parsed.data.password, 12)
 
-  return prisma.user.create({
-    data: {
-      name: parsed.data.name,
-      email: parsed.data.email,
-      passwordHash,
-      role: Role.WORKER,
-      isActive: true,
-    },
-    select: {
-      id: true,
-      name: true,
-      email: true,
-      role: true,
-      isActive: true,
-    },
-  })
+  try {
+    return await prisma.user.create({
+      data: {
+        name: parsed.data.name,
+        email: parsed.data.email,
+        passwordHash,
+        role: Role.WORKER,
+        isActive: true,
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        isActive: true,
+      },
+    })
+  } catch (error) {
+    if (isUniqueConstraintError(error)) {
+      throw new AppError('Email already in use', 409)
+    }
+
+    throw error
+  }
 }
 
 export async function updateWorker(id: string, input: unknown): Promise<PublicWorker> {
@@ -139,21 +151,31 @@ export async function updateWorker(id: string, input: unknown): Promise<PublicWo
     }
   }
 
-  return prisma.user.update({
-    where: { id },
-    data: {
-      name: parsed.data.name,
-      email: parsed.data.email,
-      ...(parsed.data.password ? { passwordHash: await bcrypt.hash(parsed.data.password, 12) } : {}),
-    },
-    select: {
-      id: true,
-      name: true,
-      email: true,
-      role: true,
-      isActive: true,
-    },
-  })
+  try {
+    return await prisma.user.update({
+      where: { id },
+      data: {
+        name: parsed.data.name,
+        email: parsed.data.email,
+        ...(parsed.data.password
+          ? { passwordHash: await bcrypt.hash(parsed.data.password, 12) }
+          : {}),
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        isActive: true,
+      },
+    })
+  } catch (error) {
+    if (isUniqueConstraintError(error)) {
+      throw new AppError('Email already in use', 409)
+    }
+
+    throw error
+  }
 }
 
 export async function deactivateWorker(id: string): Promise<Pick<User, 'id' | 'isActive'>> {
@@ -219,21 +241,29 @@ export async function updateOwnProfile(
     }
   }
 
-  return prisma.user.update({
-    where: { id: userId },
-    data: {
-      name: parsed.data.name,
-      email: parsed.data.email,
-      ...(parsed.data.newPassword
-        ? { passwordHash: await bcrypt.hash(parsed.data.newPassword, 12) }
-        : {}),
-    },
-    select: {
-      id: true,
-      name: true,
-      email: true,
-    },
-  })
+  try {
+    return await prisma.user.update({
+      where: { id: userId },
+      data: {
+        name: parsed.data.name,
+        email: parsed.data.email,
+        ...(parsed.data.newPassword
+          ? { passwordHash: await bcrypt.hash(parsed.data.newPassword, 12) }
+          : {}),
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+      },
+    })
+  } catch (error) {
+    if (isUniqueConstraintError(error)) {
+      throw new AppError('Email already in use', 409)
+    }
+
+    throw error
+  }
 }
 
 export async function forgotPassword(input: unknown): Promise<{ message: string }> {
@@ -243,14 +273,13 @@ export async function forgotPassword(input: unknown): Promise<{ message: string 
     throw appErrorFromZod(parsed.error)
   }
 
+  const rawToken = crypto.randomUUID()
+  await bcrypt.hash(rawToken, 4)
+
   const user = await prisma.user.findUnique({ where: { email: parsed.data.email } })
 
-  const rawToken = crypto.randomUUID()
   const hashedToken = crypto.createHash('sha256').update(rawToken).digest('hex')
   const expiresAt = new Date(Date.now() + 60 * 60 * 1000)
-
-  // Keeps a similar computational path between existing and non-existing emails.
-  await bcrypt.hash(rawToken, 4)
 
   if (user) {
     await prisma.verificationToken.create({

@@ -96,6 +96,27 @@ function jsonRequest(url: string, method: string, body: Record<string, unknown>)
   })
 }
 
+function getCredentialsAuthorize(): (credentials: { email: string; password: string }) => Promise<unknown> {
+  const provider = authOptions.providers?.find(
+    (candidate): candidate is {
+      id: string
+      authorize: (credentials: { email: string; password: string }) => Promise<unknown>
+    } =>
+      typeof candidate === 'object' &&
+      candidate !== null &&
+      'id' in candidate &&
+      candidate.id === 'credentials' &&
+      'authorize' in candidate &&
+      typeof candidate.authorize === 'function',
+  )
+
+  if (!provider) {
+    throw new Error('Credentials provider authorize callback is not configured')
+  }
+
+  return provider.authorize
+}
+
 describe('auth module routes', () => {
   beforeEach(() => {
     jest.resetAllMocks()
@@ -343,11 +364,8 @@ describe('auth module routes', () => {
       isActive: false,
     })
 
-    const provider = authOptions.providers?.[0] as unknown as {
-      authorize: (credentials: { email: string; password: string }) => Promise<unknown>
-    }
-
-    const result = await provider.authorize({ email: 'worker@example.com', password: 'password123' })
+    const authorize = getCredentialsAuthorize()
+    const result = await authorize({ email: 'worker@example.com', password: 'password123' })
 
     expect(result).toBeNull()
   })
