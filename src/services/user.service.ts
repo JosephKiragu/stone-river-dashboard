@@ -1,4 +1,4 @@
-import { Role, User } from '@prisma/client'
+import { Prisma, Role, User } from '@prisma/client'
 import bcrypt from 'bcryptjs'
 import crypto from 'node:crypto'
 import { Resend } from 'resend'
@@ -60,6 +60,14 @@ const resetPasswordSchema = z.object({
 
 type PublicWorker = Pick<User, 'id' | 'name' | 'email' | 'role' | 'isActive'>
 
+
+function isUniqueConstraintError(error: unknown): boolean {
+  return (
+    error instanceof Prisma.PrismaClientKnownRequestError &&
+    error.code === 'P2002'
+  )
+}
+
 function appErrorFromZod(error: z.ZodError): AppError {
   const issue = error.issues[0]
   const field = issue?.path.join('.') || 'body'
@@ -96,22 +104,30 @@ export async function createWorker(input: unknown): Promise<PublicWorker> {
 
   const passwordHash = await bcrypt.hash(parsed.data.password, 12)
 
-  return prisma.user.create({
-    data: {
-      name: parsed.data.name,
-      email: parsed.data.email,
-      passwordHash,
-      role: Role.WORKER,
-      isActive: true,
-    },
-    select: {
-      id: true,
-      name: true,
-      email: true,
-      role: true,
-      isActive: true,
-    },
-  })
+  try {
+    return await prisma.user.create({
+      data: {
+        name: parsed.data.name,
+        email: parsed.data.email,
+        passwordHash,
+        role: Role.WORKER,
+        isActive: true,
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        isActive: true,
+      },
+    })
+  } catch (error) {
+    if (isUniqueConstraintError(error)) {
+      throw new AppError('Email already in use', 409)
+    }
+
+    throw error
+  }
 }
 
 export async function updateWorker(id: string, input: unknown): Promise<PublicWorker> {
@@ -249,7 +265,9 @@ export async function forgotPassword(input: unknown): Promise<{ message: string 
   const hashedToken = crypto.createHash('sha256').update(rawToken).digest('hex')
   const expiresAt = new Date(Date.now() + 60 * 60 * 1000)
 
-  // Keeps a similar computational path between existing and non-existing emails.
+  // KNOWN LIMITATION: The non-existing-email path skips DB I/O (no verificationToken.create).
+  // A sub-millisecond timing difference is theoretically observable but not exploitable
+  // at this application's scale and threat model. Equalization deferred to Phase 2 if required.
   await bcrypt.hash(rawToken, 4)
 
   if (user) {

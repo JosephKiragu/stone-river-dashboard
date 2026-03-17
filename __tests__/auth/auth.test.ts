@@ -1,7 +1,8 @@
 /** @jest-environment node */
-import { Role } from '@prisma/client'
+import { Prisma, Role } from '@prisma/client'
 import bcrypt from 'bcryptjs'
 import { getServerSession } from 'next-auth/next'
+import type { CredentialsConfig } from 'next-auth/providers/credentials'
 import { Resend } from 'resend'
 
 const mockSend = jest.fn()
@@ -21,6 +22,7 @@ jest.mock('@/lib/prisma', () => ({
       findUnique: jest.fn(),
       create: jest.fn(),
       update: jest.fn(),
+      count: jest.fn(),
     },
     verificationToken: {
       create: jest.fn(),
@@ -55,12 +57,13 @@ import { prisma as prismaClient } from '@/lib/prisma'
 const mockGetServerSession = getServerSession as jest.MockedFunction<typeof getServerSession>
 const mockBcryptHash = bcrypt.hash as jest.MockedFunction<typeof bcrypt.hash>
 const mockBcryptCompare = bcrypt.compare as jest.MockedFunction<typeof bcrypt.compare>
-const mockPrisma = prismaClient as {
+const mockPrisma = prismaClient as unknown as {
   user: {
     findMany: jest.Mock
     findUnique: jest.Mock
     create: jest.Mock
     update: jest.Mock
+    count: jest.Mock
   }
   verificationToken: {
     create: jest.Mock
@@ -88,6 +91,19 @@ const workerSession = {
   },
 }
 
+function isCredentialsProvider(
+  p: unknown,
+): p is { authorize: NonNullable<CredentialsConfig['authorize']> } {
+  return (
+    typeof p === 'object' &&
+    p !== null &&
+    'type' in p &&
+    (p as { type: string }).type === 'credentials' &&
+    'authorize' in p &&
+    typeof (p as { authorize: unknown }).authorize === 'function'
+  )
+}
+
 function jsonRequest(url: string, method: string, body: Record<string, unknown>): Request {
   return new Request(url, {
     method,
@@ -100,8 +116,8 @@ describe('auth module routes', () => {
   beforeEach(() => {
     jest.resetAllMocks()
     mockGetServerSession.mockResolvedValue(ownerSession)
-    mockBcryptHash.mockResolvedValue('hashed-value')
-    mockBcryptCompare.mockResolvedValue(true)
+    mockBcryptHash.mockResolvedValue('hashed-value' as unknown as never)
+    mockBcryptCompare.mockResolvedValue(true as unknown as never)
     mockPrisma.$transaction.mockImplementation(async (operations: unknown[]) => Promise.all(operations))
     process.env.RESEND_API_KEY = 'resend-key'
     process.env.NEXTAUTH_URL = 'http://localhost:3000'
@@ -174,6 +190,27 @@ describe('auth module routes', () => {
       jsonRequest('http://localhost/api/users', 'POST', {
         name: 'Worker One',
         email: 'worker1@example.com',
+        password: 'password123',
+      }) as never,
+    )
+
+    expect(response.status).toBe(409)
+    await expect(response.json()).resolves.toEqual({ error: 'Email already in use' })
+  })
+
+  it('POST /api/users: duplicate email at create -> 409', async () => {
+    mockPrisma.user.findUnique.mockResolvedValueOnce(null)
+    mockPrisma.user.create.mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+        code: 'P2002',
+        clientVersion: '5.0.0',
+      }),
+    )
+
+    const response = await usersPOST(
+      jsonRequest('http://localhost/api/users', 'POST', {
+        name: 'Worker One',
+        email: 'duplicate@example.com',
         password: 'password123',
       }) as never,
     )
@@ -343,11 +380,15 @@ describe('auth module routes', () => {
       isActive: false,
     })
 
-    const provider = authOptions.providers?.[0] as unknown as {
-      authorize: (credentials: { email: string; password: string }) => Promise<unknown>
+    const provider = authOptions.providers[0]
+    expect(isCredentialsProvider(provider)).toBe(true)
+    if (!isCredentialsProvider(provider)) {
+      throw new Error('Expected credentials provider')
     }
-
-    const result = await provider.authorize({ email: 'worker@example.com', password: 'password123' })
+    const result = await provider.authorize(
+      { email: 'worker@example.com', password: 'password123' },
+      {} as never,
+    )
 
     expect(result).toBeNull()
   })
@@ -383,7 +424,7 @@ describe('auth module routes', () => {
       role: Role.OWNER,
       isActive: true,
     })
-    mockBcryptCompare.mockResolvedValue(true)
+    mockBcryptCompare.mockResolvedValue(true as unknown as never)
     mockPrisma.user.update.mockResolvedValue({
       id: 'owner-1',
       name: 'Owner',
@@ -409,7 +450,7 @@ describe('auth module routes', () => {
       role: Role.OWNER,
       isActive: true,
     })
-    mockBcryptCompare.mockResolvedValue(false)
+    mockBcryptCompare.mockResolvedValue(false as unknown as never)
 
     const response = await usersMePUT(
       jsonRequest('http://localhost/api/users/me', 'PUT', {
