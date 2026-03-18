@@ -185,37 +185,28 @@ export async function createPen(input: unknown) {
 
 export async function updatePen(id: string, input: unknown) {
   assertValidCuid(id)
-
   const parsed = updatePenSchema.safeParse(input)
+  if (!parsed.success) throw appErrorFromZod(parsed.error)
 
-  if (!parsed.success) {
-    throw appErrorFromZod(parsed.error)
-  }
+  const target = await prisma.pen.findUnique({ where: { id } })
+  if (!target) throw new AppError('Pen not found', 404)
 
-  const target = await prisma.pen.findUnique({
-    where: { id },
-    select: { id: true, name: true, isActive: true },
-  })
+  // RULE: any update that results in isActive=true must pass name-uniqueness validation.
+  // A reactivation (isActive: true in payload) is equivalent to a create for this purpose.
+  const willBeActive =
+    parsed.data.isActive === true ||
+    (parsed.data.isActive === undefined && target.isActive)
 
-  if (!target) {
-    throw new AppError('Pen not found', 404)
-  }
-
-  const nextIsActive = parsed.data.isActive ?? target.isActive
-
-  if (parsed.data.name && nextIsActive) {
-    const duplicate = await prisma.pen.findFirst({
+  if (willBeActive) {
+    const effectiveName = parsed.data.name ?? target.name
+    const conflict = await prisma.pen.findFirst({
       where: {
-        id: { not: id },
-        name: parsed.data.name,
+        name: effectiveName,
         isActive: true,
+        id: { not: id },
       },
-      select: { id: true },
     })
-
-    if (duplicate) {
-      throw new AppError('Pen name already exists', 409)
-    }
+    if (conflict) throw new AppError('Pen name already exists', 409)
   }
 
   if (parsed.data.isActive === false) {
@@ -223,34 +214,17 @@ export async function updatePen(id: string, input: unknown) {
       const activeCowCount = await tx.cow.count({
         where: { penId: id, status: CowStatus.ACTIVE },
       })
-
       if (activeCowCount > 0) {
         throw new AppError('Pen has active cows. Move them before deactivating.', 409)
       }
-
       return tx.pen.update({
         where: { id },
         data: parsed.data,
-        select: {
-          id: true,
-          name: true,
-          capacity: true,
-          isActive: true,
-        },
       })
     })
   }
 
-  return prisma.pen.update({
-    where: { id },
-    data: parsed.data,
-    select: {
-      id: true,
-      name: true,
-      capacity: true,
-      isActive: true,
-    },
-  })
+  return prisma.pen.update({ where: { id }, data: parsed.data })
 }
 
 export async function listFeedItems(rawIncludeInactive: unknown) {
@@ -307,51 +281,29 @@ export async function createFeedItem(input: unknown) {
 
 export async function updateFeedItem(id: string, input: unknown) {
   assertValidCuid(id)
-
   const parsed = updateFeedItemSchema.safeParse(input)
+  if (!parsed.success) throw appErrorFromZod(parsed.error)
 
-  if (!parsed.success) {
-    throw appErrorFromZod(parsed.error)
-  }
+  const target = await prisma.feedItem.findUnique({ where: { id } })
+  if (!target) throw new AppError('Feed item not found', 404)
 
-  const target = await prisma.feedItem.findUnique({
-    where: { id },
-    select: {
-      id: true,
-      isActive: true,
-      name: true,
-    },
-  })
+  // RULE: any update that results in isActive=true must pass name-uniqueness validation.
+  // A reactivation (isActive: true in payload) is equivalent to a create for this purpose.
+  const willBeActive =
+    parsed.data.isActive === true ||
+    (parsed.data.isActive === undefined && target.isActive)
 
-  if (!target) {
-    throw new AppError('Feed item not found', 404)
-  }
-
-  const nextIsActive = parsed.data.isActive ?? target.isActive
-
-  if (parsed.data.name && nextIsActive) {
-    const duplicate = await prisma.feedItem.findFirst({
+  if (willBeActive) {
+    const effectiveName = parsed.data.name ?? target.name
+    const conflict = await prisma.feedItem.findFirst({
       where: {
-        id: { not: id },
-        name: parsed.data.name,
+        name: effectiveName,
         isActive: true,
+        id: { not: id },
       },
-      select: { id: true },
     })
-
-    if (duplicate) {
-      throw new AppError('Feed item name already exists', 409)
-    }
+    if (conflict) throw new AppError('Feed item name already exists', 409)
   }
 
-  return prisma.feedItem.update({
-    where: { id },
-    data: parsed.data,
-    select: {
-      id: true,
-      name: true,
-      unit: true,
-      isActive: true,
-    },
-  })
+  return prisma.feedItem.update({ where: { id }, data: parsed.data })
 }

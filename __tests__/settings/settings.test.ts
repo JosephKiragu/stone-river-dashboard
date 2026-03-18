@@ -36,6 +36,7 @@ jest.mock('next-auth/next', () => ({
 }))
 
 import { POST as feedItemsPOST } from '@/app/api/feed/items/route'
+import { PUT } from '@/app/api/feed/items/[id]/route'
 import { GET as pensGET, POST as pensPOST } from '@/app/api/pens/route'
 import { PUT as penByIdPUT } from '@/app/api/pens/[id]/route'
 import { GET as settingsGET, PUT as settingsPUT } from '@/app/api/settings/route'
@@ -241,6 +242,58 @@ describe('settings module routes', () => {
 
     expect(response.status).toBe(409)
     await expect(response.json()).resolves.toEqual({ error: 'Feed item name already exists' })
+  })
+
+  it('returns 404 when feed item not found', async () => {
+    mockGetServerSession.mockResolvedValue(ownerSession)
+    mockPrisma.feedItem.findUnique.mockResolvedValue(null)
+
+    const req = new NextRequest('http://localhost/api/feed/items/clxxxfeedid', {
+      method: 'PUT',
+      body: JSON.stringify({ name: 'Barley' }),
+    })
+    const res = await PUT(req, { params: { id: 'clxxxfeedid' } })
+
+    expect(res.status).toBe(404)
+    const body = await res.json()
+    expect(body.error).toBe('Feed item not found')
+  })
+
+  it('returns 409 when reactivating a feed item with a conflicting active name', async () => {
+    mockGetServerSession.mockResolvedValue(ownerSession)
+    const inactiveItem = { id: 'clyyyfeedid', name: 'Hay', unit: 'KG', isActive: false }
+    const conflictItem = { id: 'clzzzfeedid', name: 'Hay', unit: 'BALES', isActive: true }
+    mockPrisma.feedItem.findUnique.mockResolvedValue(inactiveItem)
+    mockPrisma.feedItem.findFirst.mockResolvedValue(conflictItem)
+
+    const req = new NextRequest('http://localhost/api/feed/items/clyyyfeedid', {
+      method: 'PUT',
+      body: JSON.stringify({ isActive: true }),
+    })
+    const res = await PUT(req, { params: { id: 'clyyyfeedid' } })
+
+    expect(res.status).toBe(409)
+    const body = await res.json()
+    expect(body.error).toBe('Feed item name already exists')
+  })
+
+  it('returns 200 on successful feed item update', async () => {
+    mockGetServerSession.mockResolvedValue(ownerSession)
+    const existingItem = { id: 'clyyyfeedid', name: 'Hay', unit: 'KG', isActive: true }
+    mockPrisma.feedItem.findUnique.mockResolvedValue(existingItem)
+    mockPrisma.feedItem.findFirst.mockResolvedValue(null)
+    const updatedItem = { ...existingItem, name: 'Wheat Hay' }
+    mockPrisma.feedItem.update.mockResolvedValue(updatedItem)
+
+    const req = new NextRequest('http://localhost/api/feed/items/clyyyfeedid', {
+      method: 'PUT',
+      body: JSON.stringify({ name: 'Wheat Hay' }),
+    })
+    const res = await PUT(req, { params: { id: 'clyyyfeedid' } })
+
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    expect(body.name).toBe('Wheat Hay')
   })
 
   it('PUT /api/settings: WORKER session -> 403', async () => {

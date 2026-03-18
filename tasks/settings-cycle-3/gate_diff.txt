@@ -1,0 +1,1850 @@
+diff --git a/.gitignore b/.gitignore
+index fd3dbb5..925ce47 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -34,3 +34,5 @@ yarn-error.log*
+ # typescript
+ *.tsbuildinfo
+ next-env.d.ts
++
++.env
+diff --git a/__tests__/settings/settings.test.ts b/__tests__/settings/settings.test.ts
+new file mode 100644
+index 0000000..0dc3c01
+--- /dev/null
++++ b/__tests__/settings/settings.test.ts
+@@ -0,0 +1,564 @@
++import { Prisma, Role } from '@prisma/client'
++import { getServerSession } from 'next-auth/next'
++
++import { GET as getFeedItems, POST as postFeedItems } from '@/app/api/feed/items/route'
++import { PUT as putFeedItemById } from '@/app/api/feed/items/[id]/route'
++import { GET as getPens, POST as postPens } from '@/app/api/pens/route'
++import { PUT as putPenById } from '@/app/api/pens/[id]/route'
++import { GET as getSettings, PUT as putSettings } from '@/app/api/settings/route'
++import { prisma } from '@/lib/prisma'
++
++jest.mock('next-auth/next', () => ({
++  getServerSession: jest.fn(),
++}))
++
++jest.mock('@/lib/prisma', () => {
++  const prismaMock = {
++    appSettings: {
++      upsert: jest.fn(),
++      update: jest.fn(),
++    },
++    pen: {
++      findMany: jest.fn(),
++      findFirst: jest.fn(),
++      findUnique: jest.fn(),
++      create: jest.fn(),
++      update: jest.fn(),
++    },
++    cow: {
++      count: jest.fn(),
++    },
++    feedItem: {
++      findMany: jest.fn(),
++      findFirst: jest.fn(),
++      findUnique: jest.fn(),
++      create: jest.fn(),
++      update: jest.fn(),
++    },
++    feedStockEntry: {
++      deleteMany: jest.fn(),
++    },
++    feedRation: {
++      deleteMany: jest.fn(),
++    },
++  }
++
++  return { prisma: prismaMock }
++})
++
++type MockSession = { user: { id: string; role: Role } } | null
++
++const mockedGetServerSession = getServerSession as jest.MockedFunction<typeof getServerSession>
++const mockedPrisma = prisma as unknown as {
++  appSettings: {
++    upsert: jest.Mock
++    update: jest.Mock
++  }
++  pen: {
++    findMany: jest.Mock
++    findFirst: jest.Mock
++    findUnique: jest.Mock
++    create: jest.Mock
++    update: jest.Mock
++  }
++  cow: {
++    count: jest.Mock
++  }
++  feedItem: {
++    findMany: jest.Mock
++    findFirst: jest.Mock
++    findUnique: jest.Mock
++    create: jest.Mock
++    update: jest.Mock
++  }
++  feedStockEntry: {
++    deleteMany: jest.Mock
++  }
++  feedRation: {
++    deleteMany: jest.Mock
++  }
++}
++
++function setSession(session: MockSession) {
++  mockedGetServerSession.mockResolvedValue(session as never)
++}
++
++function ownerSession() {
++  setSession({ user: { id: 'owner-1', role: Role.OWNER } })
++}
++
++function workerSession() {
++  setSession({ user: { id: 'worker-1', role: Role.WORKER } })
++}
++
++function noSession() {
++  setSession(null)
++}
++
++function jsonRequest(url: string, method: string, body?: unknown) {
++  return new Request(url, {
++    method,
++    headers: { 'content-type': 'application/json' },
++    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
++  })
++}
++
++beforeEach(() => {
++  jest.resetAllMocks()
++})
++
++describe('settings module APIs', () => {
++  test('GET /api/pens unauthenticated -> 401', async () => {
++    noSession()
++    const response = await getPens(new Request('http://localhost/api/pens') as never)
++    expect(response.status).toBe(401)
++  })
++
++  test('GET /api/pens worker role -> 403', async () => {
++    workerSession()
++    const response = await getPens(new Request('http://localhost/api/pens') as never)
++    expect(response.status).toBe(403)
++  })
++
++  test('POST /api/pens unauthenticated -> 401', async () => {
++    noSession()
++    const response = await postPens(
++      jsonRequest('http://localhost/api/pens', 'POST', { name: 'Pen A', capacity: 10 }) as never,
++    )
++    expect(response.status).toBe(401)
++  })
++
++  test('POST /api/pens worker role -> 403', async () => {
++    workerSession()
++    const response = await postPens(
++      jsonRequest('http://localhost/api/pens', 'POST', { name: 'Pen A', capacity: 10 }) as never,
++    )
++    expect(response.status).toBe(403)
++  })
++
++  test('PUT /api/pens/[id] unauthenticated -> 401', async () => {
++    noSession()
++    const response = await putPenById(
++      jsonRequest('http://localhost/api/pens/cmf2v6ntp0000w5f3f8n4u5o1', 'PUT', { name: 'Renamed' }) as never,
++      { params: { id: 'cmf2v6ntp0000w5f3f8n4u5o1' } },
++    )
++    expect(response.status).toBe(401)
++  })
++
++  test('PUT /api/pens/[id] worker role -> 403', async () => {
++    workerSession()
++    const response = await putPenById(
++      jsonRequest('http://localhost/api/pens/cmf2v6ntp0000w5f3f8n4u5o1', 'PUT', { name: 'Renamed' }) as never,
++      { params: { id: 'cmf2v6ntp0000w5f3f8n4u5o1' } },
++    )
++    expect(response.status).toBe(403)
++  })
++
++  test('GET /api/feed/items unauthenticated -> 401', async () => {
++    noSession()
++    const response = await getFeedItems(new Request('http://localhost/api/feed/items') as never)
++    expect(response.status).toBe(401)
++  })
++
++  test('GET /api/feed/items worker role -> 403', async () => {
++    workerSession()
++    const response = await getFeedItems(new Request('http://localhost/api/feed/items') as never)
++    expect(response.status).toBe(403)
++  })
++
++  test('POST /api/feed/items unauthenticated -> 401', async () => {
++    noSession()
++    const response = await postFeedItems(
++      jsonRequest('http://localhost/api/feed/items', 'POST', { name: 'Maize', unit: 'KG' }) as never,
++    )
++    expect(response.status).toBe(401)
++  })
++
++  test('POST /api/feed/items worker role -> 403', async () => {
++    workerSession()
++    const response = await postFeedItems(
++      jsonRequest('http://localhost/api/feed/items', 'POST', { name: 'Maize', unit: 'KG' }) as never,
++    )
++    expect(response.status).toBe(403)
++  })
++
++  test('PUT /api/feed/items/[id] unauthenticated -> 401', async () => {
++    noSession()
++    const response = await putFeedItemById(
++      jsonRequest('http://localhost/api/feed/items/cmf2v6ntp0000w5f3f8n4u5o1', 'PUT', { unit: 'KG' }) as never,
++      { params: { id: 'cmf2v6ntp0000w5f3f8n4u5o1' } },
++    )
++    expect(response.status).toBe(401)
++  })
++
++  test('PUT /api/feed/items/[id] worker role -> 403', async () => {
++    workerSession()
++    const response = await putFeedItemById(
++      jsonRequest('http://localhost/api/feed/items/cmf2v6ntp0000w5f3f8n4u5o1', 'PUT', { unit: 'KG' }) as never,
++      { params: { id: 'cmf2v6ntp0000w5f3f8n4u5o1' } },
++    )
++    expect(response.status).toBe(403)
++  })
++
++  test('GET /api/settings unauthenticated -> 401', async () => {
++    noSession()
++    const response = await getSettings(new Request('http://localhost/api/settings') as never)
++    expect(response.status).toBe(401)
++  })
++
++  test('PUT /api/settings unauthenticated -> 401', async () => {
++    noSession()
++    const response = await putSettings(
++      jsonRequest('http://localhost/api/settings', 'PUT', { marketPricePerKg: 250 }) as never,
++    )
++    expect(response.status).toBe(401)
++  })
++
++  test('PUT /api/settings worker role -> 403', async () => {
++    workerSession()
++    const response = await putSettings(
++      jsonRequest('http://localhost/api/settings', 'PUT', { marketPricePerKg: 250 }) as never,
++    )
++    expect(response.status).toBe(403)
++  })
++
++  test('GET /api/settings worker role -> 403', async () => {
++    workerSession()
++    const response = await getSettings(new Request('http://localhost/api/settings') as never)
++    expect(response.status).toBe(403)
++  })
++
++  test('GET /api/settings first run upserts defaults and returns 200', async () => {
++    ownerSession()
++    mockedPrisma.appSettings.upsert.mockResolvedValue({
++      marketPricePerKg: 0,
++      sellCycleDays: 90,
++      expenseAllocationMethod: 'PROPORTIONAL_WEIGHT',
++    })
++
++    const response = await getSettings(new Request('http://localhost/api/settings') as never)
++
++    expect(response.status).toBe(200)
++    await expect(response.json()).resolves.toEqual({
++      marketPricePerKg: 0,
++      sellCycleDays: 90,
++      expenseAllocationMethod: 'PROPORTIONAL_WEIGHT',
++    })
++    expect(mockedPrisma.appSettings.upsert).toHaveBeenCalledTimes(1)
++  })
++
++  test('PUT /api/settings valid update persists and returns 200', async () => {
++    ownerSession()
++    mockedPrisma.appSettings.update.mockResolvedValue({
++      marketPricePerKg: 250,
++      sellCycleDays: 90,
++      expenseAllocationMethod: 'PROPORTIONAL_WEIGHT',
++    })
++
++    const response = await putSettings(
++      jsonRequest('http://localhost/api/settings', 'PUT', {
++        marketPricePerKg: 250,
++        sellCycleDays: 90,
++      }) as never,
++    )
++
++    expect(response.status).toBe(200)
++    await expect(response.json()).resolves.toEqual({
++      marketPricePerKg: 250,
++      sellCycleDays: 90,
++      expenseAllocationMethod: 'PROPORTIONAL_WEIGHT',
++    })
++  })
++
++  test('PUT /api/settings invalid allocation method -> 400', async () => {
++    ownerSession()
++
++    const response = await putSettings(
++      jsonRequest('http://localhost/api/settings', 'PUT', {
++        expenseAllocationMethod: 'INVALID',
++      }) as never,
++    )
++
++    expect(response.status).toBe(400)
++  })
++
++  test('POST /api/pens valid pen -> 201 with expected fields', async () => {
++    ownerSession()
++    mockedPrisma.pen.create.mockResolvedValue({
++      id: 'pen-1',
++      name: 'Pen A',
++      capacity: 10,
++      isActive: true,
++    })
++
++    const response = await postPens(
++      jsonRequest('http://localhost/api/pens', 'POST', {
++        name: 'Pen A',
++        capacity: 10,
++      }) as never,
++    )
++
++    expect(response.status).toBe(201)
++    await expect(response.json()).resolves.toEqual({
++      id: 'pen-1',
++      name: 'Pen A',
++      capacity: 10,
++      isActive: true,
++    })
++  })
++
++  test('POST /api/pens duplicate name -> 409', async () => {
++    ownerSession()
++    const p2002Error = Object.assign(
++      new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
++        code: 'P2002',
++        clientVersion: '6.0.0',
++      }),
++      { meta: { target: ['name'] } },
++    )
++    mockedPrisma.pen.create.mockRejectedValue(p2002Error)
++
++    const response = await postPens(
++      jsonRequest('http://localhost/api/pens', 'POST', {
++        name: 'Pen A',
++        capacity: 10,
++      }) as never,
++    )
++
++    expect(response.status).toBe(409)
++  })
++
++  test('GET /api/pens returns activeCowCount and occupancyPct', async () => {
++    ownerSession()
++    mockedPrisma.pen.findMany.mockResolvedValue([
++      {
++        id: 'pen-1',
++        name: 'Pen A',
++        capacity: 10,
++        isActive: true,
++      },
++    ])
++    mockedPrisma.cow.count.mockResolvedValueOnce(2)
++
++    const response = await getPens(new Request('http://localhost/api/pens') as never)
++
++    expect(response.status).toBe(200)
++    await expect(response.json()).resolves.toEqual([
++      {
++        id: 'pen-1',
++        name: 'Pen A',
++        capacity: 10,
++        isActive: true,
++        activeCowCount: 2,
++        occupancyPct: 20,
++      },
++    ])
++  })
++
++  test('GET /api/pens capacity 0 returns occupancyPct 0', async () => {
++    ownerSession()
++    mockedPrisma.pen.findMany.mockResolvedValue([
++      {
++        id: 'pen-2',
++        name: 'Pen B',
++        capacity: 0,
++        isActive: true,
++      },
++    ])
++    mockedPrisma.cow.count.mockResolvedValueOnce(3)
++
++    const response = await getPens(new Request('http://localhost/api/pens') as never)
++
++    expect(response.status).toBe(200)
++    await expect(response.json()).resolves.toEqual([
++      {
++        id: 'pen-2',
++        name: 'Pen B',
++        capacity: 0,
++        isActive: true,
++        activeCowCount: 3,
++        occupancyPct: 0,
++      },
++    ])
++  })
++
++  test('PUT /api/pens/[id] isActive=false with active cows -> 409', async () => {
++    ownerSession()
++    mockedPrisma.pen.findUnique.mockResolvedValue({
++      id: 'cmf2v6ntp0000w5f3f8n4u5o1',
++      name: 'Pen A',
++      capacity: 10,
++      isActive: true,
++    })
++    mockedPrisma.cow.count.mockResolvedValueOnce(1)
++
++    const response = await putPenById(
++      jsonRequest('http://localhost/api/pens/cmf2v6ntp0000w5f3f8n4u5o1', 'PUT', { isActive: false }) as never,
++      { params: { id: 'cmf2v6ntp0000w5f3f8n4u5o1' } },
++    )
++
++    expect(response.status).toBe(409)
++  })
++
++  test('PUT /api/pens/[id] isActive=false with no active cows -> 200', async () => {
++    ownerSession()
++    mockedPrisma.pen.findUnique.mockResolvedValue({
++      id: 'cmf2v6ntp0000w5f3f8n4u5o1',
++      name: 'Pen A',
++      capacity: 10,
++      isActive: true,
++    })
++    mockedPrisma.cow.count.mockResolvedValueOnce(0)
++    mockedPrisma.pen.update.mockResolvedValue({
++      id: 'cmf2v6ntp0000w5f3f8n4u5o1',
++      name: 'Pen A',
++      capacity: 10,
++      isActive: false,
++    })
++
++    const response = await putPenById(
++      jsonRequest('http://localhost/api/pens/cmf2v6ntp0000w5f3f8n4u5o1', 'PUT', { isActive: false }) as never,
++      { params: { id: 'cmf2v6ntp0000w5f3f8n4u5o1' } },
++    )
++
++    expect(response.status).toBe(200)
++    await expect(response.json()).resolves.toEqual({
++      id: 'cmf2v6ntp0000w5f3f8n4u5o1',
++      name: 'Pen A',
++      capacity: 10,
++      isActive: false,
++    })
++  })
++
++  test('GET /api/pens excludes inactive unless includeInactive=true', async () => {
++    ownerSession()
++    mockedPrisma.pen.findMany.mockResolvedValue([])
++
++    await getPens(new Request('http://localhost/api/pens') as never)
++    expect(mockedPrisma.pen.findMany).toHaveBeenNthCalledWith(1, {
++      where: { isActive: true },
++      orderBy: { createdAt: 'asc' },
++    })
++
++    mockedPrisma.pen.findMany.mockResolvedValue([])
++    await getPens(new Request('http://localhost/api/pens?includeInactive=true') as never)
++    expect(mockedPrisma.pen.findMany).toHaveBeenNthCalledWith(2, {
++      where: undefined,
++      orderBy: { createdAt: 'asc' },
++    })
++  })
++
++  test('POST /api/feed/items valid -> 201', async () => {
++    ownerSession()
++    mockedPrisma.feedItem.create.mockResolvedValue({
++      id: 'item-1',
++      name: 'Maize',
++      unit: 'KG',
++      isActive: true,
++    })
++
++    const response = await postFeedItems(
++      jsonRequest('http://localhost/api/feed/items', 'POST', {
++        name: 'Maize',
++        unit: 'KG',
++      }) as never,
++    )
++
++    expect(response.status).toBe(201)
++  })
++
++  test('POST /api/feed/items duplicate name -> 409', async () => {
++    ownerSession()
++    const p2002Error = Object.assign(
++      new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
++        code: 'P2002',
++        clientVersion: '6.0.0',
++      }),
++      { meta: { target: ['name'] } },
++    )
++    mockedPrisma.feedItem.create.mockRejectedValue(p2002Error)
++
++    const response = await postFeedItems(
++      jsonRequest('http://localhost/api/feed/items', 'POST', {
++        name: 'Maize',
++        unit: 'KG',
++      }) as never,
++    )
++
++    expect(response.status).toBe(409)
++  })
++
++  test('PUT /api/feed/items/[id] isActive=false -> 200 and no historical delete', async () => {
++    ownerSession()
++    mockedPrisma.feedItem.findUnique.mockResolvedValue({
++      id: 'cmf2v6ntp0000w5f3f8n4u5o1',
++      name: 'Maize',
++      unit: 'KG',
++      isActive: true,
++    })
++    mockedPrisma.feedItem.update.mockResolvedValue({
++      id: 'cmf2v6ntp0000w5f3f8n4u5o1',
++      name: 'Maize',
++      unit: 'KG',
++      isActive: false,
++    })
++
++    const response = await putFeedItemById(
++      jsonRequest('http://localhost/api/feed/items/cmf2v6ntp0000w5f3f8n4u5o1', 'PUT', { isActive: false }) as never,
++      { params: { id: 'cmf2v6ntp0000w5f3f8n4u5o1' } },
++    )
++
++    expect(response.status).toBe(200)
++    expect(mockedPrisma.feedStockEntry.deleteMany).not.toHaveBeenCalled()
++    expect(mockedPrisma.feedRation.deleteMany).not.toHaveBeenCalled()
++  })
++
++  test('PUT /api/feed/items/[id] non-existent item -> 404', async () => {
++    ownerSession()
++    mockedPrisma.feedItem.findUnique.mockResolvedValue(null)
++
++    const response = await putFeedItemById(
++      jsonRequest('http://localhost/api/feed/items/cmf2v6ntp0000w5f3f8n4u5o1', 'PUT', { name: 'Updated' }) as never,
++      { params: { id: 'cmf2v6ntp0000w5f3f8n4u5o1' } },
++    )
++
++    expect(response.status).toBe(404)
++  })
++
++  test('PUT /api/feed/items/[id] invalid unit -> 400', async () => {
++    ownerSession()
++
++    const response = await putFeedItemById(
++      jsonRequest('http://localhost/api/feed/items/cmf2v6ntp0000w5f3f8n4u5o1', 'PUT', { unit: 'INVALID' }) as never,
++      { params: { id: 'cmf2v6ntp0000w5f3f8n4u5o1' } },
++    )
++
++    expect(response.status).toBe(400)
++  })
++
++  test('POST /api/pens whitespace-only name fails -> 400', async () => {
++    ownerSession()
++
++    const response = await postPens(
++      jsonRequest('http://localhost/api/pens', 'POST', {
++        name: '    ',
++        capacity: 10,
++      }) as never,
++    )
++
++    expect(response.status).toBe(400)
++  })
++
++  test('POST /api/feed/items whitespace-only name fails -> 400', async () => {
++    ownerSession()
++
++    const response = await postFeedItems(
++      jsonRequest('http://localhost/api/feed/items', 'POST', {
++        name: '    ',
++        unit: 'KG',
++      }) as never,
++    )
++
++    expect(response.status).toBe(400)
++  })
++})
+diff --git a/jest.config.ts b/jest.config.ts
+index 2ec12f8..3828f47 100644
+--- a/jest.config.ts
++++ b/jest.config.ts
+@@ -5,7 +5,7 @@ const createJestConfig = nextJest({ dir: './' })
+ 
+ const config: Config = {
+   coverageProvider: 'v8',
+-  testEnvironment: 'jsdom',
++  testEnvironment: 'node',
+   setupFilesAfterEnv: ['<rootDir>/jest.setup.ts'],
+   testPathIgnorePatterns: ['/node_modules/', '/e2e/'],
+   moduleNameMapper: {
+diff --git a/src/app/api/auth/reset-password/route.ts b/src/app/api/auth/reset-password/route.ts
+new file mode 100644
+index 0000000..88ccf60
+--- /dev/null
++++ b/src/app/api/auth/reset-password/route.ts
+@@ -0,0 +1,31 @@
++import { NextRequest, NextResponse } from 'next/server'
++import { z } from 'zod'
++
++import { isAppError, toErrorResponse } from '@/lib/errors'
++import { forgotPassword } from '@/services/user.service'
++
++const forgotPasswordSchema = z.object({
++  email: z.string().email(),
++})
++
++export async function POST(request: NextRequest) {
++  try {
++    const payload = forgotPasswordSchema.parse(await request.json())
++    await forgotPassword(payload.email)
++    return NextResponse.json({ success: true })
++  } catch (err) {
++    if (err instanceof z.ZodError) {
++      return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
++    }
++
++    if (isAppError(err)) {
++      if (err.code === 'BAD_REQUEST') {
++        return NextResponse.json(toErrorResponse(err), { status: 400 })
++      }
++
++      return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
++    }
++
++    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
++  }
++}
+diff --git a/src/app/api/feed/items/[id]/route.ts b/src/app/api/feed/items/[id]/route.ts
+new file mode 100644
+index 0000000..9438998
+--- /dev/null
++++ b/src/app/api/feed/items/[id]/route.ts
+@@ -0,0 +1,83 @@
++import { Role } from '@prisma/client'
++import { getServerSession } from 'next-auth/next'
++import { NextRequest, NextResponse } from 'next/server'
++import { z } from 'zod'
++
++import { authOptions } from '@/lib/auth'
++import { AppError, isAppError, toErrorResponse } from '@/lib/errors'
++import { updateFeedItem } from '@/services/feedItem.service'
++
++type SessionUser = { id?: string; role?: Role | string }
++type SessionShape = { user?: SessionUser } | null
++
++const updateFeedItemSchema = z
++  .object({
++    name: z.string().trim().min(1).max(100).optional(),
++    unit: z.enum(['KG', 'BALES', 'BAGS']).optional(),
++    isActive: z.boolean().optional(),
++  })
++  .refine((input) => Object.keys(input).length > 0, {
++    message: 'At least one field is required',
++  })
++
++const paramsSchema = z.object({ id: z.string().cuid() })
++
++function mapErrorToStatus(err: AppError): number {
++  if (err.code === 'BAD_REQUEST') {
++    return 400
++  }
++
++  if (err.code === 'UNAUTHORIZED') {
++    return 401
++  }
++
++  if (err.code === 'FORBIDDEN') {
++    return 403
++  }
++
++  if (err.code === 'NOT_FOUND') {
++    return 404
++  }
++
++  if (err.code === 'CONFLICT') {
++    return 409
++  }
++
++  return 500
++}
++
++async function requireOwner() {
++  const session = (await getServerSession(authOptions)) as SessionShape
++  const user = session?.user
++
++  if (!user?.id) {
++    throw new AppError('UNAUTHORIZED', 'Unauthorized')
++  }
++
++  if (user.role !== Role.OWNER) {
++    throw new AppError('FORBIDDEN', 'Forbidden')
++  }
++}
++
++export async function PUT(
++  request: NextRequest,
++  context: { params: { id: string } },
++) {
++  try {
++    await requireOwner()
++    const { id } = paramsSchema.parse(context.params)
++    const payload = updateFeedItemSchema.parse(await request.json())
++    const item = await updateFeedItem(id, payload)
++    return NextResponse.json(item)
++  } catch (err) {
++    if (err instanceof z.ZodError) {
++      return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
++    }
++
++    if (isAppError(err)) {
++      return NextResponse.json(toErrorResponse(err), { status: mapErrorToStatus(err) })
++    }
++
++    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
++  }
++}
+diff --git a/src/app/api/feed/items/route.ts b/src/app/api/feed/items/route.ts
+new file mode 100644
+index 0000000..a1ccfde
+--- /dev/null
++++ b/src/app/api/feed/items/route.ts
+@@ -0,0 +1,88 @@
++import { Role } from '@prisma/client'
++import { getServerSession } from 'next-auth/next'
++import { NextRequest, NextResponse } from 'next/server'
++import { z } from 'zod'
++
++import { authOptions } from '@/lib/auth'
++import { AppError, isAppError, toErrorResponse } from '@/lib/errors'
++import { parseIncludeInactive } from '@/lib/query-utils'
++import { createFeedItem, listFeedItems } from '@/services/feedItem.service'
++
++type SessionUser = { id?: string; role?: Role | string }
++type SessionShape = { user?: SessionUser } | null
++
++const createFeedItemSchema = z.object({
++  name: z.string().trim().min(1).max(100),
++  unit: z.enum(['KG', 'BALES', 'BAGS']),
++})
++
++function mapErrorToStatus(err: AppError): number {
++  if (err.code === 'BAD_REQUEST') {
++    return 400
++  }
++
++  if (err.code === 'UNAUTHORIZED') {
++    return 401
++  }
++
++  if (err.code === 'FORBIDDEN') {
++    return 403
++  }
++
++  if (err.code === 'NOT_FOUND') {
++    return 404
++  }
++
++  if (err.code === 'CONFLICT') {
++    return 409
++  }
++
++  return 500
++}
++
++async function requireOwner() {
++  const session = (await getServerSession(authOptions)) as SessionShape
++  const user = session?.user
++
++  if (!user?.id) {
++    throw new AppError('UNAUTHORIZED', 'Unauthorized')
++  }
++
++  if (user.role !== Role.OWNER) {
++    throw new AppError('FORBIDDEN', 'Forbidden')
++  }
++}
++
++export async function GET(request: NextRequest) {
++  try {
++    await requireOwner()
++    const includeInactive = parseIncludeInactive(new URL(request.url).searchParams)
++    const items = await listFeedItems(includeInactive)
++    return NextResponse.json(items)
++  } catch (err) {
++    if (isAppError(err)) {
++      return NextResponse.json(toErrorResponse(err), { status: mapErrorToStatus(err) })
++    }
++
++    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
++  }
++}
++
++export async function POST(request: NextRequest) {
++  try {
++    await requireOwner()
++    const payload = createFeedItemSchema.parse(await request.json())
++    const item = await createFeedItem(payload)
++    return NextResponse.json(item, { status: 201 })
++  } catch (err) {
++    if (err instanceof z.ZodError) {
++      return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
++    }
++
++    if (isAppError(err)) {
++      return NextResponse.json(toErrorResponse(err), { status: mapErrorToStatus(err) })
++    }
++
++    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
++  }
++}
+diff --git a/src/app/api/pens/[id]/route.ts b/src/app/api/pens/[id]/route.ts
+new file mode 100644
+index 0000000..299c88e
+--- /dev/null
++++ b/src/app/api/pens/[id]/route.ts
+@@ -0,0 +1,83 @@
++import { Role } from '@prisma/client'
++import { getServerSession } from 'next-auth/next'
++import { NextRequest, NextResponse } from 'next/server'
++import { z } from 'zod'
++
++import { authOptions } from '@/lib/auth'
++import { AppError, isAppError, toErrorResponse } from '@/lib/errors'
++import { updatePen } from '@/services/pen.service'
++
++type SessionUser = { id?: string; role?: Role | string }
++type SessionShape = { user?: SessionUser } | null
++
++const updatePenSchema = z
++  .object({
++    name: z.string().trim().min(1).max(50).optional(),
++    capacity: z.number().int().min(1).optional(),
++    isActive: z.boolean().optional(),
++  })
++  .refine((input) => Object.keys(input).length > 0, {
++    message: 'At least one field is required',
++  })
++
++const paramsSchema = z.object({ id: z.string().cuid() })
++
++function mapErrorToStatus(err: AppError): number {
++  if (err.code === 'BAD_REQUEST') {
++    return 400
++  }
++
++  if (err.code === 'UNAUTHORIZED') {
++    return 401
++  }
++
++  if (err.code === 'FORBIDDEN') {
++    return 403
++  }
++
++  if (err.code === 'NOT_FOUND') {
++    return 404
++  }
++
++  if (err.code === 'CONFLICT') {
++    return 409
++  }
++
++  return 500
++}
++
++async function requireOwner() {
++  const session = (await getServerSession(authOptions)) as SessionShape
++  const user = session?.user
++
++  if (!user?.id) {
++    throw new AppError('UNAUTHORIZED', 'Unauthorized')
++  }
++
++  if (user.role !== Role.OWNER) {
++    throw new AppError('FORBIDDEN', 'Forbidden')
++  }
++}
++
++export async function PUT(
++  request: NextRequest,
++  context: { params: { id: string } },
++) {
++  try {
++    await requireOwner()
++    const { id } = paramsSchema.parse(context.params)
++    const payload = updatePenSchema.parse(await request.json())
++    const pen = await updatePen(id, payload)
++    return NextResponse.json(pen)
++  } catch (err) {
++    if (err instanceof z.ZodError) {
++      return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
++    }
++
++    if (isAppError(err)) {
++      return NextResponse.json(toErrorResponse(err), { status: mapErrorToStatus(err) })
++    }
++
++    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
++  }
++}
+diff --git a/src/app/api/pens/route.ts b/src/app/api/pens/route.ts
+new file mode 100644
+index 0000000..3b283b0
+--- /dev/null
++++ b/src/app/api/pens/route.ts
+@@ -0,0 +1,88 @@
++import { Role } from '@prisma/client'
++import { getServerSession } from 'next-auth/next'
++import { NextRequest, NextResponse } from 'next/server'
++import { z } from 'zod'
++
++import { authOptions } from '@/lib/auth'
++import { AppError, isAppError, toErrorResponse } from '@/lib/errors'
++import { parseIncludeInactive } from '@/lib/query-utils'
++import { createPen, listPens } from '@/services/pen.service'
++
++type SessionUser = { id?: string; role?: Role | string }
++type SessionShape = { user?: SessionUser } | null
++
++const createPenSchema = z.object({
++  name: z.string().trim().min(1).max(50),
++  capacity: z.number().int().min(1),
++})
++
++function mapErrorToStatus(err: AppError): number {
++  if (err.code === 'BAD_REQUEST') {
++    return 400
++  }
++
++  if (err.code === 'UNAUTHORIZED') {
++    return 401
++  }
++
++  if (err.code === 'FORBIDDEN') {
++    return 403
++  }
++
++  if (err.code === 'NOT_FOUND') {
++    return 404
++  }
++
++  if (err.code === 'CONFLICT') {
++    return 409
++  }
++
++  return 500
++}
++
++async function requireOwner() {
++  const session = (await getServerSession(authOptions)) as SessionShape
++  const user = session?.user
++
++  if (!user?.id) {
++    throw new AppError('UNAUTHORIZED', 'Unauthorized')
++  }
++
++  if (user.role !== Role.OWNER) {
++    throw new AppError('FORBIDDEN', 'Forbidden')
++  }
++}
++
++export async function GET(request: NextRequest) {
++  try {
++    await requireOwner()
++    const includeInactive = parseIncludeInactive(new URL(request.url).searchParams)
++    const pens = await listPens(includeInactive)
++    return NextResponse.json(pens)
++  } catch (err) {
++    if (isAppError(err)) {
++      return NextResponse.json(toErrorResponse(err), { status: mapErrorToStatus(err) })
++    }
++
++    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
++  }
++}
++
++export async function POST(request: NextRequest) {
++  try {
++    await requireOwner()
++    const payload = createPenSchema.parse(await request.json())
++    const pen = await createPen(payload)
++    return NextResponse.json(pen, { status: 201 })
++  } catch (err) {
++    if (err instanceof z.ZodError) {
++      return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
++    }
++
++    if (isAppError(err)) {
++      return NextResponse.json(toErrorResponse(err), { status: mapErrorToStatus(err) })
++    }
++
++    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
++  }
++}
+diff --git a/src/app/api/settings/route.ts b/src/app/api/settings/route.ts
+new file mode 100644
+index 0000000..d338108
+--- /dev/null
++++ b/src/app/api/settings/route.ts
+@@ -0,0 +1,94 @@
++import { AllocationMethod, Role } from '@prisma/client'
++import { getServerSession } from 'next-auth/next'
++import { NextRequest, NextResponse } from 'next/server'
++import { z } from 'zod'
++
++import { authOptions } from '@/lib/auth'
++import { AppError, isAppError, toErrorResponse } from '@/lib/errors'
++import { getSettings, updateSettings } from '@/services/settings.service'
++
++type SessionUser = { id?: string; role?: Role | string }
++
++type SessionShape = { user?: SessionUser } | null
++
++const putSettingsSchema = z
++  .object({
++    marketPricePerKg: z.number().min(0).optional(),
++    sellCycleDays: z.number().int().min(30).max(365).optional(),
++    expenseAllocationMethod: z.nativeEnum(AllocationMethod).optional(),
++  })
++  .refine((input) => Object.keys(input).length > 0, {
++    message: 'At least one field is required',
++  })
++
++function mapErrorToStatus(err: AppError): number {
++  if (err.code === 'BAD_REQUEST') {
++    return 400
++  }
++
++  if (err.code === 'UNAUTHORIZED') {
++    return 401
++  }
++
++  if (err.code === 'FORBIDDEN') {
++    return 403
++  }
++
++  if (err.code === 'NOT_FOUND') {
++    return 404
++  }
++
++  if (err.code === 'CONFLICT') {
++    return 409
++  }
++
++  return 500
++}
++
++async function requireOwner(): Promise<SessionUser> {
++  const session = (await getServerSession(authOptions)) as SessionShape
++  const user = session?.user
++
++  if (!user?.id) {
++    throw new AppError('UNAUTHORIZED', 'Unauthorized')
++  }
++
++  if (user.role !== Role.OWNER) {
++    throw new AppError('FORBIDDEN', 'Forbidden')
++  }
++
++  return user
++}
++
++export async function GET() {
++  try {
++    await requireOwner()
++    const settings = await getSettings()
++    return NextResponse.json(settings)
++  } catch (err) {
++    if (isAppError(err)) {
++      return NextResponse.json(toErrorResponse(err), { status: mapErrorToStatus(err) })
++    }
++
++    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
++  }
++}
++
++export async function PUT(request: NextRequest) {
++  try {
++    await requireOwner()
++    const payload = putSettingsSchema.parse(await request.json())
++    const settings = await updateSettings(payload)
++    return NextResponse.json(settings)
++  } catch (err) {
++    if (err instanceof z.ZodError) {
++      return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
++    }
++
++    if (isAppError(err)) {
++      return NextResponse.json(toErrorResponse(err), { status: mapErrorToStatus(err) })
++    }
++
++    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
++  }
++}
+diff --git a/src/app/api/users/[id]/route.ts b/src/app/api/users/[id]/route.ts
+new file mode 100644
+index 0000000..87139c8
+--- /dev/null
++++ b/src/app/api/users/[id]/route.ts
+@@ -0,0 +1,69 @@
++import { Role } from '@prisma/client'
++import { getServerSession } from 'next-auth/next'
++import { NextRequest, NextResponse } from 'next/server'
++import { z } from 'zod'
++
++import { authOptions } from '@/lib/auth'
++import { AppError, isAppError, toErrorResponse } from '@/lib/errors'
++import { updateWorker } from '@/services/user.service'
++
++type SessionUser = { id?: string; role?: Role | string }
++type SessionShape = { user?: SessionUser } | null
++
++const paramsSchema = z.object({ id: z.string().cuid() })
++
++const updateWorkerSchema = z
++  .object({
++    name: z.string().trim().min(1).max(100).optional(),
++    email: z.string().email().optional(),
++    password: z.string().min(8).optional(),
++    isActive: z.boolean().optional(),
++  })
++  .refine((input) => Object.keys(input).length > 0, {
++    message: 'At least one field is required',
++  })
++
++function mapErrorToStatus(err: AppError): number {
++  if (err.code === 'BAD_REQUEST') return 400
++  if (err.code === 'UNAUTHORIZED') return 401
++  if (err.code === 'FORBIDDEN') return 403
++  if (err.code === 'NOT_FOUND') return 404
++  if (err.code === 'CONFLICT') return 409
++  return 500
++}
++
++async function requireOwner() {
++  const session = (await getServerSession(authOptions)) as SessionShape
++  const user = session?.user
++
++  if (!user?.id) {
++    throw new AppError('UNAUTHORIZED', 'Unauthorized')
++  }
++
++  if (user.role !== Role.OWNER) {
++    throw new AppError('FORBIDDEN', 'Forbidden')
++  }
++}
++
++export async function PUT(
++  request: NextRequest,
++  context: { params: { id: string } },
++) {
++  try {
++    await requireOwner()
++    const { id } = paramsSchema.parse(context.params)
++    const payload = updateWorkerSchema.parse(await request.json())
++    const worker = await updateWorker(id, payload)
++    return NextResponse.json(worker)
++  } catch (err) {
++    if (err instanceof z.ZodError) {
++      return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
++    }
++
++    if (isAppError(err)) {
++      return NextResponse.json(toErrorResponse(err), { status: mapErrorToStatus(err) })
++    }
++
++    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
++  }
++}
+diff --git a/src/app/api/users/me/route.ts b/src/app/api/users/me/route.ts
+new file mode 100644
+index 0000000..e19a0e1
+--- /dev/null
++++ b/src/app/api/users/me/route.ts
+@@ -0,0 +1,71 @@
++import { getServerSession } from 'next-auth/next'
++import { NextRequest, NextResponse } from 'next/server'
++import { z } from 'zod'
++
++import { authOptions } from '@/lib/auth'
++import { AppError, isAppError, toErrorResponse } from '@/lib/errors'
++import { getSelf, updateSelf } from '@/services/user.service'
++
++type SessionShape = { user?: { id?: string } } | null
++
++const updateSelfSchema = z
++  .object({
++    name: z.string().trim().min(1).max(100).optional(),
++    email: z.string().email().optional(),
++    password: z.string().min(8).optional(),
++  })
++  .refine((input) => Object.keys(input).length > 0, {
++    message: 'At least one field is required',
++  })
++
++function mapErrorToStatus(err: AppError): number {
++  if (err.code === 'BAD_REQUEST') return 400
++  if (err.code === 'UNAUTHORIZED') return 401
++  if (err.code === 'FORBIDDEN') return 403
++  if (err.code === 'NOT_FOUND') return 404
++  if (err.code === 'CONFLICT') return 409
++  return 500
++}
++
++async function requireSessionUserId(): Promise<string> {
++  const session = (await getServerSession(authOptions)) as SessionShape
++
++  if (!session?.user?.id) {
++    throw new AppError('UNAUTHORIZED', 'Unauthorized')
++  }
++
++  return session.user.id
++}
++
++export async function GET() {
++  try {
++    const userId = await requireSessionUserId()
++    const user = await getSelf(userId)
++    return NextResponse.json(user)
++  } catch (err) {
++    if (isAppError(err)) {
++      return NextResponse.json(toErrorResponse(err), { status: mapErrorToStatus(err) })
++    }
++
++    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
++  }
++}
++
++export async function PUT(request: NextRequest) {
++  try {
++    const userId = await requireSessionUserId()
++    const payload = updateSelfSchema.parse(await request.json())
++    const user = await updateSelf(userId, payload)
++    return NextResponse.json(user)
++  } catch (err) {
++    if (err instanceof z.ZodError) {
++      return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
++    }
++
++    if (isAppError(err)) {
++      return NextResponse.json(toErrorResponse(err), { status: mapErrorToStatus(err) })
++    }
++
++    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
++  }
++}
+diff --git a/src/app/api/users/route.ts b/src/app/api/users/route.ts
+new file mode 100644
+index 0000000..968ef5f
+--- /dev/null
++++ b/src/app/api/users/route.ts
+@@ -0,0 +1,72 @@
++import { Role } from '@prisma/client'
++import { getServerSession } from 'next-auth/next'
++import { NextRequest, NextResponse } from 'next/server'
++import { z } from 'zod'
++
++import { authOptions } from '@/lib/auth'
++import { AppError, isAppError, toErrorResponse } from '@/lib/errors'
++import { createWorker, listWorkers } from '@/services/user.service'
++
++type SessionUser = { id?: string; role?: Role | string }
++type SessionShape = { user?: SessionUser } | null
++
++const createWorkerSchema = z.object({
++  name: z.string().trim().min(1).max(100),
++  email: z.string().email(),
++  password: z.string().min(8),
++})
++
++function mapErrorToStatus(err: AppError): number {
++  if (err.code === 'BAD_REQUEST') return 400
++  if (err.code === 'UNAUTHORIZED') return 401
++  if (err.code === 'FORBIDDEN') return 403
++  if (err.code === 'NOT_FOUND') return 404
++  if (err.code === 'CONFLICT') return 409
++  return 500
++}
++
++async function requireOwner() {
++  const session = (await getServerSession(authOptions)) as SessionShape
++  const user = session?.user
++
++  if (!user?.id) {
++    throw new AppError('UNAUTHORIZED', 'Unauthorized')
++  }
++
++  if (user.role !== Role.OWNER) {
++    throw new AppError('FORBIDDEN', 'Forbidden')
++  }
++}
++
++export async function GET() {
++  try {
++    await requireOwner()
++    const workers = await listWorkers()
++    return NextResponse.json(workers)
++  } catch (err) {
++    if (isAppError(err)) {
++      return NextResponse.json(toErrorResponse(err), { status: mapErrorToStatus(err) })
++    }
++
++    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
++  }
++}
++
++export async function POST(request: NextRequest) {
++  try {
++    await requireOwner()
++    const payload = createWorkerSchema.parse(await request.json())
++    const worker = await createWorker(payload)
++    return NextResponse.json(worker, { status: 201 })
++  } catch (err) {
++    if (err instanceof z.ZodError) {
++      return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
++    }
++
++    if (isAppError(err)) {
++      return NextResponse.json(toErrorResponse(err), { status: mapErrorToStatus(err) })
++    }
++
++    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
++  }
++}
+diff --git a/src/lib/auth.ts b/src/lib/auth.ts
+new file mode 100644
+index 0000000..e4b3628
+--- /dev/null
++++ b/src/lib/auth.ts
+@@ -0,0 +1,8 @@
++import type { NextAuthOptions } from 'next-auth'
++
++export const authOptions: NextAuthOptions = {
++  session: {
++    strategy: 'jwt',
++  },
++  providers: [],
++}
+diff --git a/src/lib/errors.ts b/src/lib/errors.ts
+new file mode 100644
+index 0000000..431ef88
+--- /dev/null
++++ b/src/lib/errors.ts
+@@ -0,0 +1,25 @@
++export type AppErrorCode =
++  | 'NOT_FOUND'
++  | 'CONFLICT'
++  | 'FORBIDDEN'
++  | 'BAD_REQUEST'
++  | 'UNAUTHORIZED'
++
++export class AppError extends Error {
++  constructor(public code: AppErrorCode, message: string, public field?: string) {
++    super(message)
++    this.name = 'AppError'
++  }
++}
++
++export function isAppError(err: unknown): err is AppError {
++  return err instanceof AppError
++}
++
++export function toErrorResponse(err: AppError): { error: string; field?: string } {
++  const result: { error: string; field?: string } = { error: err.message }
++  if (err.field) {
++    result.field = err.field
++  }
++  return result
++}
+diff --git a/src/lib/prisma.ts b/src/lib/prisma.ts
+new file mode 100644
+index 0000000..90b95fd
+--- /dev/null
++++ b/src/lib/prisma.ts
+@@ -0,0 +1,9 @@
++import { PrismaClient } from '@prisma/client'
++
++const globalForPrisma = globalThis as unknown as { prisma?: PrismaClient }
++
++export const prisma = globalForPrisma.prisma ?? new PrismaClient()
++
++if (process.env.NODE_ENV !== 'production') {
++  globalForPrisma.prisma = prisma
++}
+diff --git a/src/lib/query-utils.ts b/src/lib/query-utils.ts
+new file mode 100644
+index 0000000..640307f
+--- /dev/null
++++ b/src/lib/query-utils.ts
+@@ -0,0 +1,3 @@
++export function parseIncludeInactive(searchParams: URLSearchParams): boolean {
++  return searchParams.get('includeInactive') === 'true'
++}
+diff --git a/src/services/feedItem.service.ts b/src/services/feedItem.service.ts
+new file mode 100644
+index 0000000..35a6933
+--- /dev/null
++++ b/src/services/feedItem.service.ts
+@@ -0,0 +1,71 @@
++import { Prisma } from '@prisma/client'
++
++import { AppError } from '@/lib/errors'
++import { prisma } from '@/lib/prisma'
++
++export type CreateFeedItemInput = {
++  name: string
++  unit: 'KG' | 'BALES' | 'BAGS'
++}
++
++export type UpdateFeedItemInput = {
++  name?: string
++  unit?: 'KG' | 'BALES' | 'BAGS'
++  isActive?: boolean
++}
++
++export async function listFeedItems(includeInactive: boolean) {
++  return prisma.feedItem.findMany({
++    where: includeInactive ? undefined : { isActive: true },
++    orderBy: { createdAt: 'asc' },
++  })
++}
++
++export async function createFeedItem(input: CreateFeedItemInput) {
++  try {
++    return await prisma.feedItem.create({
++      data: {
++        name: input.name,
++        unit: input.unit,
++        isActive: true,
++      },
++    })
++  } catch (err) {
++    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
++      throw new AppError('CONFLICT', 'Feed item name already exists', 'name')
++    }
++
++    throw err
++  }
++}
++
++export async function updateFeedItem(id: string, input: UpdateFeedItemInput) {
++  const existing = await prisma.feedItem.findUnique({ where: { id } })
++
++  if (!existing) {
++    throw new AppError('NOT_FOUND', 'Feed item not found')
++  }
++
++  try {
++    return await prisma.feedItem.update({
++      where: { id },
++      data: {
++        ...(input.name !== undefined ? { name: input.name } : {}),
++        ...(input.unit !== undefined ? { unit: input.unit } : {}),
++        ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
++      },
++    })
++  } catch (err) {
++    if (err instanceof Prisma.PrismaClientKnownRequestError) {
++      if (err.code === 'P2002') {
++        throw new AppError('CONFLICT', 'Feed item name already exists', 'name')
++      }
++
++      if (err.code === 'P2025') {
++        throw new AppError('NOT_FOUND', 'Feed item not found')
++      }
++    }
++
++    throw err
++  }
++}
+diff --git a/src/services/pen.service.ts b/src/services/pen.service.ts
+new file mode 100644
+index 0000000..b475447
+--- /dev/null
++++ b/src/services/pen.service.ts
+@@ -0,0 +1,105 @@
++import { CowStatus, Prisma } from '@prisma/client'
++
++import { AppError } from '@/lib/errors'
++import { prisma } from '@/lib/prisma'
++
++export type CreatePenInput = {
++  name: string
++  capacity: number
++}
++
++export type UpdatePenInput = {
++  name?: string
++  capacity?: number
++  isActive?: boolean
++}
++
++export async function listPens(includeInactive: boolean) {
++  const pens = await prisma.pen.findMany({
++    where: includeInactive ? undefined : { isActive: true },
++    orderBy: { createdAt: 'asc' },
++  })
++
++  return Promise.all(
++    pens.map(async (pen) => {
++      const activeCowCount = await prisma.cow.count({
++        where: {
++          penId: pen.id,
++          status: CowStatus.ACTIVE,
++        },
++      })
++
++      const occupancyPct = pen.capacity > 0 ? (activeCowCount / pen.capacity) * 100 : 0
++
++      return {
++        ...pen,
++        activeCowCount,
++        occupancyPct,
++      }
++    }),
++  )
++}
++
++export async function createPen(input: CreatePenInput) {
++  try {
++    return await prisma.pen.create({
++      data: {
++        name: input.name,
++        capacity: input.capacity,
++        isActive: true,
++      },
++    })
++  } catch (err) {
++    if (err instanceof Prisma.PrismaClientKnownRequestError) {
++      if (err.code === 'P2002') {
++        throw new AppError('CONFLICT', 'Pen name already exists', 'name')
++      }
++    }
++
++    throw err
++  }
++}
++
++export async function updatePen(id: string, input: UpdatePenInput) {
++  const existing = await prisma.pen.findUnique({ where: { id } })
++
++  if (!existing) {
++    throw new AppError('NOT_FOUND', 'Pen not found')
++  }
++
++  if (input.isActive === false && existing.isActive === true) {
++    const activeCowCount = await prisma.cow.count({
++      where: {
++        penId: id,
++        status: CowStatus.ACTIVE,
++      },
++    })
++
++    if (activeCowCount > 0) {
++      throw new AppError('CONFLICT', 'Pen has active cows. Move them before deactivating.')
++    }
++  }
++
++  try {
++    return await prisma.pen.update({
++      where: { id },
++      data: {
++        ...(input.name !== undefined ? { name: input.name } : {}),
++        ...(input.capacity !== undefined ? { capacity: input.capacity } : {}),
++        ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
++      },
++    })
++  } catch (err) {
++    if (err instanceof Prisma.PrismaClientKnownRequestError) {
++      if (err.code === 'P2002') {
++        throw new AppError('CONFLICT', 'Pen name already exists', 'name')
++      }
++
++      if (err.code === 'P2025') {
++        throw new AppError('NOT_FOUND', 'Pen not found')
++      }
++    }
++
++    throw err
++  }
++}
+diff --git a/src/services/settings.service.ts b/src/services/settings.service.ts
+new file mode 100644
+index 0000000..f80890e
+--- /dev/null
++++ b/src/services/settings.service.ts
+@@ -0,0 +1,48 @@
++import { AllocationMethod, Prisma } from '@prisma/client'
++
++import { AppError } from '@/lib/errors'
++import { prisma } from '@/lib/prisma'
++
++export type UpdateSettingsInput = {
++  marketPricePerKg?: number
++  sellCycleDays?: number
++  expenseAllocationMethod?: AllocationMethod
++}
++
++export async function getSettings() {
++  return prisma.appSettings.upsert({
++    where: { id: 'global' },
++    update: {},
++    create: {
++      id: 'global',
++      marketPricePerKg: 0,
++      sellCycleDays: 90,
++      expenseAllocationMethod: AllocationMethod.PROPORTIONAL_WEIGHT,
++    },
++    select: {
++      marketPricePerKg: true,
++      sellCycleDays: true,
++      expenseAllocationMethod: true,
++    },
++  })
++}
++
++export async function updateSettings(input: UpdateSettingsInput) {
++  try {
++    return await prisma.appSettings.update({
++      where: { id: 'global' },
++      data: input,
++      select: {
++        marketPricePerKg: true,
++        sellCycleDays: true,
++        expenseAllocationMethod: true,
++      },
++    })
++  } catch (err) {
++    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2025') {
++      throw new AppError('NOT_FOUND', 'Settings not found')
++    }
++
++    throw err
++  }
++}
+diff --git a/src/services/user.service.ts b/src/services/user.service.ts
+new file mode 100644
+index 0000000..e6043c3
+--- /dev/null
++++ b/src/services/user.service.ts
+@@ -0,0 +1,207 @@
++import { Prisma, Role } from '@prisma/client'
++import bcrypt from 'bcryptjs'
++import { randomUUID } from 'crypto'
++import { Resend } from 'resend'
++
++import { AppError } from '@/lib/errors'
++import { prisma } from '@/lib/prisma'
++
++export type UserResponse = {
++  id: string
++  name: string
++  email: string
++  role: Role
++  isActive: boolean
++}
++
++export function toUserResponse(user: {
++  id: string
++  name: string
++  email: string
++  role: Role
++  isActive: boolean
++}): UserResponse {
++  return {
++    id: user.id,
++    name: user.name,
++    email: user.email,
++    role: user.role,
++    isActive: user.isActive,
++  }
++}
++
++export async function listWorkers(): Promise<UserResponse[]> {
++  const workers = await prisma.user.findMany({
++    where: { role: Role.WORKER },
++    orderBy: { createdAt: 'asc' },
++  })
++
++  return workers.map(toUserResponse)
++}
++
++export async function createWorker(input: {
++  name: string
++  email: string
++  password: string
++}): Promise<UserResponse> {
++  const passwordHash = await bcrypt.hash(input.password, 12)
++
++  try {
++    const user = await prisma.user.create({
++      data: {
++        name: input.name,
++        email: input.email,
++        passwordHash,
++        role: Role.WORKER,
++        isActive: true,
++      },
++    })
++
++    return toUserResponse(user)
++  } catch (err) {
++    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
++      throw new AppError('CONFLICT', 'Email already exists', 'email')
++    }
++
++    throw err
++  }
++}
++
++export async function updateWorker(
++  id: string,
++  input: {
++    name?: string
++    email?: string
++    isActive?: boolean
++    password?: string
++  },
++): Promise<UserResponse> {
++  const data: {
++    name?: string
++    email?: string
++    isActive?: boolean
++    passwordHash?: string
++  } = {
++    ...(input.name !== undefined ? { name: input.name } : {}),
++    ...(input.email !== undefined ? { email: input.email } : {}),
++    ...(input.isActive !== undefined ? { isActive: input.isActive } : {}),
++  }
++
++  if (input.password !== undefined) {
++    data.passwordHash = await bcrypt.hash(input.password, 12)
++  }
++
++  try {
++    const user = await prisma.user.update({
++      where: { id },
++      data,
++    })
++
++    return toUserResponse(user)
++  } catch (err) {
++    if (err instanceof Prisma.PrismaClientKnownRequestError) {
++      if (err.code === 'P2002') {
++        throw new AppError('CONFLICT', 'Email already exists', 'email')
++      }
++
++      if (err.code === 'P2025') {
++        throw new AppError('NOT_FOUND', 'Worker not found')
++      }
++    }
++
++    throw err
++  }
++}
++
++export async function getSelf(id: string): Promise<UserResponse> {
++  const user = await prisma.user.findUnique({ where: { id } })
++
++  if (!user) {
++    throw new AppError('NOT_FOUND', 'User not found')
++  }
++
++  return toUserResponse(user)
++}
++
++export async function updateSelf(
++  id: string,
++  input: {
++    name?: string
++    email?: string
++    password?: string
++  },
++): Promise<UserResponse> {
++  const data: {
++    name?: string
++    email?: string
++    passwordHash?: string
++  } = {
++    ...(input.name !== undefined ? { name: input.name } : {}),
++    ...(input.email !== undefined ? { email: input.email } : {}),
++  }
++
++  if (input.password !== undefined) {
++    data.passwordHash = await bcrypt.hash(input.password, 12)
++  }
++
++  try {
++    const user = await prisma.user.update({
++      where: { id },
++      data,
++    })
++
++    return toUserResponse(user)
++  } catch (err) {
++    if (err instanceof Prisma.PrismaClientKnownRequestError) {
++      if (err.code === 'P2002') {
++        throw new AppError('CONFLICT', 'Email already exists', 'email')
++      }
++
++      if (err.code === 'P2025') {
++        throw new AppError('NOT_FOUND', 'User not found')
++      }
++    }
++
++    throw err
++  }
++}
++
++export async function forgotPassword(email: string): Promise<{ sent: true }> {
++  const fromEmail = process.env.RESEND_FROM_EMAIL
++  const resendKey = process.env.RESEND_API_KEY
++
++  if (!fromEmail || !resendKey) {
++    throw new AppError('BAD_REQUEST', 'Email sending is not configured')
++  }
++
++  const user = await prisma.user.findUnique({ where: { email } })
++
++  if (!user || !user.isActive) {
++    return { sent: true }
++  }
++
++  await prisma.verificationToken.deleteMany({
++    where: { identifier: email },
++  })
++
++  const token = randomUUID()
++  const expires = new Date(Date.now() + 60 * 60 * 1000)
++
++  await prisma.verificationToken.create({
++    data: {
++      identifier: email,
++      token,
++      expires,
++    },
++  })
++
++  const resend = new Resend(resendKey)
++  await resend.emails.send({
++    from: fromEmail,
++    to: [email],
++    subject: 'Reset your password',
++    html: `<p>Use this token to reset your password: ${token}</p>`,
++  })
++
++  return { sent: true }
++}

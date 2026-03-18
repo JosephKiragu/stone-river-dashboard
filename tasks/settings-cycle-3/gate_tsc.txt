@@ -1,0 +1,3 @@
+__tests__/settings/settings.test.ts(205,40): error TS2554: Expected 0 arguments, but got 1.
+__tests__/settings/settings.test.ts(227,40): error TS2554: Expected 0 arguments, but got 1.
+__tests__/settings/settings.test.ts(239,40): error TS2554: Expected 0 arguments, but got 1.

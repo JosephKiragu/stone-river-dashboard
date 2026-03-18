@@ -1,0 +1,7 @@
+__tests__/auth/auth.test.ts(58,20): error TS2352: Conversion of type 'PrismaClient<PrismaClientOptions, never, DefaultArgs>' to type '{ user: { findMany: Mock<any, any, any>; findUnique: Mock<any, any, any>; create: Mock<any, any, any>; update: Mock<any, any, any>; }; verificationToken: { create: Mock<...>; findUnique: Mock<...>; delete: Mock<...>; }; $transaction: Mock<...>; }' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  The types of 'user.findMany' are incompatible between these types.
+    Type '<T extends UserFindManyArgs>(args?: SelectSubset<T, UserFindManyArgs<DefaultArgs>> | undefined) => PrismaPromise<GetFindResult<$UserPayload<DefaultArgs>, T, PrismaClientOptions>[]>' is missing the following properties from type 'Mock<any, any, any>': getMockName, mock, mockClear, mockReset, and 13 more.
+__tests__/auth/auth.test.ts(103,38): error TS2345: Argument of type '"hashed-value"' is not assignable to parameter of type 'never'.
+__tests__/auth/auth.test.ts(104,41): error TS2345: Argument of type 'true' is not assignable to parameter of type 'never'.
+__tests__/auth/auth.test.ts(386,41): error TS2345: Argument of type 'true' is not assignable to parameter of type 'never'.
+__tests__/auth/auth.test.ts(412,41): error TS2345: Argument of type 'false' is not assignable to parameter of type 'never'.
