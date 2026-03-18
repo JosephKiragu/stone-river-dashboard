@@ -1,0 +1,17 @@
+logic/major src/services/settings.service.ts:32 -- updateSettings uses prisma.appSettings.update; spec (PUT /api/settings Side Effects) requires upsert; if PUT is called before GET the row won't exist and the route returns 404 instead of creating with defaults -> replace with prisma.appSettings.upsert using same create payload as getSettings
+
+architecture/minor src/app/api/settings/route.ts:25 -- mapErrorToStatus is duplicated verbatim across 7 route files (settings, pens/route, pens/[id], feed/items/route, feed/items/[id], users/route, users/[id], users/me); extracting it once to src/lib/errors.ts eliminates ~120 lines of copy-paste -> extract to src/lib/errors.ts and import where needed
+
+architecture/minor src/app/api/settings/route.ts:46 -- requireOwner() is duplicated across 5 route files with identical logic; SessionUser and SessionShape types are also duplicated in every file -> extract requireOwner, SessionUser, and SessionShape to src/lib/route-utils.ts and import
+
+style/minor src/app/api/settings/route.ts:10 -- type SessionUser = { id?: string; role?: Role | string }; Role | string widens to plain string in TypeScript making the union a no-op; the type provides zero narrowing guarantee on role -> use role?: Role (drop the string branch); same issue in pens/route.ts:11, pens/[id]/route.ts:11, feed/items/route.ts:11, feed/items/[id]/route.ts:11, users/route.ts:11, users/[id]/route.ts:11
+
+performance/minor src/services/pen.service.ts:24 -- listPens issues one prisma.cow.count per pen inside Promise.all; for a farm with N pens this is N+1 round-trips on every GET /api/pens call -> replace with a single prisma.cow.groupBy({ by: ['penId'], where: { status: CowStatus.ACTIVE }, _count: true }) and join in memory
+
+logic/minor src/app/api/users/me/route.ts:30 -- requireSessionUserId checks only session existence, not role; spec (02-settings.md Auth Requirement) states "OWNER only for all endpoints"; a WORKER can GET and PUT their own profile -> either add role === Role.OWNER check or document the WORKER exception explicitly in the spec and update the interface
+
+testing/minor __tests__/settings/settings.test.ts:1 -- acceptance criteria requires unauthenticated → 401 for "any settings endpoint" but no 401/403 tests exist for GET /api/users, POST /api/users, PUT /api/users/[id], GET /api/users/me, PUT /api/users/me -> add auth boundary tests for all five user endpoint handlers
+
+security/minor src/services/user.service.ts:160 -- forgotPassword throws AppError('BAD_REQUEST', 'Email sending is not configured') when RESEND_FROM_EMAIL or RESEND_API_KEY are absent; this message surfaces to the API response body, leaking server configuration state -> throw a generic internal error or log and silently return { sent: true } (consistent with the email-not-found branch)
+
+style/minor src/app/api/settings/route.ts:48 -- requireOwner declares return type Promise<SessionUser> but no caller uses the returned value; every other requireOwner in the diff returns void implicitly -> change return type to Promise<void> or drop the return statement for consistency

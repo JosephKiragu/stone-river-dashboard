@@ -1,0 +1,23 @@
+{
+  "taskId": "settings-cycle-3",
+  "cycle": 3,
+  "status": "gates-complete",
+  "branch": "forge/stage-3/settings-cycle-3",
+  "commitSha": "780b81c",
+  "tests": { "pass": 34, "total": 34 },
+  "gates": {
+    "lint": "pass",
+    "tsc": "fail",
+    "security": "fail",
+    "tests": "pass",
+    "playwright": "skipped",
+    "prisma": "skipped",
+    "screenshots": "not-required"
+  },
+  "review": {
+    "major": 10,
+    "minor": 11
+  },
+  "verdict": "fail",
+  "completedAt": "2026-03-15T15:48:00Z"
+}

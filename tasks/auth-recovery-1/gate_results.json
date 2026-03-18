@@ -1,0 +1,9 @@
+{
+  "lint": "pass",
+  "tsc": "fail",
+  "security": "fail",
+  "tests": "pass",
+  "playwright": "skipped",
+  "prisma": "skipped",
+  "screenshots": "not-required"
+}
