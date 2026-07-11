@@ -1,0 +1,15 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── APP SETTINGS (singleton row, id = "global") ────────────────
+model AppSettings {
+  id               String   @id @default("global")
+  marketPricePerKg Float?
+  updatedAt        DateTime @updatedAt
+}
