@@ -13,3 +13,56 @@ model AppSettings {
   marketPricePerKg Float?
   updatedAt        DateTime @updatedAt
 }
+
+// ─── PENS ─────────────────────────────────────────────────────────
+model Pen {
+  id          String   @id @default(cuid())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  name        String
+  capacity    Int?
+  isActive    Boolean  @default(true)
+
+  assignments PenAssignment[]
+}
+
+// ─── ANIMALS ──────────────────────────────────────────────────────
+model Animal {
+  id               String       @id @default(cuid())
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+  tagId            String       @unique
+  breed            String
+  dateOfBirth      DateTime?
+  purchaseDate     DateTime
+  purchaseWeightKg Float
+  purchasePriceKes Float
+  status           AnimalStatus @default(ACTIVE)
+  exitDate         DateTime?
+  exitWeightKg     Float?
+  exitPriceKes     Float?
+  exitReason       String?
+
+  assignments PenAssignment[]
+}
+
+enum AnimalStatus {
+  ACTIVE
+  SOLD
+  DEAD
+  LOSS
+}
+
+// ─── PEN ASSIGNMENTS (history, not overwrite) ─────────────────────
+model PenAssignment {
+  id        String    @id @default(cuid())
+  animalId  String
+  animal    Animal    @relation(fields: [animalId], references: [id])
+  penId     String
+  pen       Pen       @relation(fields: [penId], references: [id])
+  from      DateTime
+  to        DateTime? // NULL = currently in this pen
+
+  @@index([penId, from, to])
+  @@index([animalId, to])
+}
