@@ -1,13 +1,17 @@
 import { PrismaClient } from "@/generated/prisma/client";
-import { PrismaNeonHttp } from "@prisma/adapter-neon";
+import { PrismaNeon } from "@prisma/adapter-neon";
+import { neonConfig } from "@neondatabase/serverless";
+import ws from "ws";
+
+// Vercel Node.js 20 has no native WebSocket global.
+// Provide the ws package so Neon's Pool can open WebSocket connections.
+// PrismaNeon (WebSocket) supports interactive transactions; PrismaNeonHttp does not.
+neonConfig.webSocketConstructor = ws;
 
 const globalForPrisma = global as unknown as { prisma: PrismaClient };
 
 function createPrismaClient(): PrismaClient {
-  // PrismaNeonHttp uses the Neon HTTP transport instead of WebSocket Pool.
-  // Required for Vercel Node.js 20 (no native WebSocket; ws pkg not installed).
-  // PrismaNeon (WebSocket Pool) silently fails on Node 20 without a wsConstructor.
-  const adapter = new PrismaNeonHttp(process.env.DATABASE_URL!, {});
+  const adapter = new PrismaNeon({ connectionString: process.env.DATABASE_URL });
   return new PrismaClient({ adapter });
 }
 
