@@ -8,7 +8,8 @@ export const proxy = auth((req) => {
   const isLoginPage = pathname === "/login";
   const isApiAuth = pathname.startsWith("/api/auth");
   const isCronRoute = pathname.startsWith("/api/cron");
-  const isPublic = isLoginPage || isApiAuth || isCronRoute;
+  const isDbCheck = pathname === "/api/dbcheck"; // temp diagnostic
+  const isPublic = isLoginPage || isApiAuth || isCronRoute || isDbCheck;
 
   if (!isLoggedIn && !isPublic) {
     return NextResponse.redirect(new URL("/login", req.url));
