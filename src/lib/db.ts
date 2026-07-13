@@ -1,12 +1,13 @@
 import { PrismaClient } from "@/generated/prisma/client";
-import { PrismaNeon } from "@prisma/adapter-neon";
+import { PrismaNeonHttp } from "@prisma/adapter-neon";
 
 const globalForPrisma = global as unknown as { prisma: PrismaClient };
 
 function createPrismaClient(): PrismaClient {
-  // Adapter is constructed lazily and only connects at query time, so this is
-  // safe to call even when DATABASE_URL is unset (no DB yet).
-  const adapter = new PrismaNeon({ connectionString: process.env.DATABASE_URL });
+  // PrismaNeonHttp uses the Neon HTTP transport instead of WebSocket Pool.
+  // Required for Vercel Node.js 20 (no native WebSocket; ws pkg not installed).
+  // PrismaNeon (WebSocket Pool) silently fails on Node 20 without a wsConstructor.
+  const adapter = new PrismaNeonHttp(process.env.DATABASE_URL!, {});
   return new PrismaClient({ adapter });
 }
 
