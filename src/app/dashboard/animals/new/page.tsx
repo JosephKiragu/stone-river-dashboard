@@ -17,10 +17,12 @@ export default async function NewAnimalPage({
     try {
       const tagId = (formData.get("tagId") as string)?.trim();
       const breed = (formData.get("breed") as string)?.trim();
-      const dobRaw = formData.get("dateOfBirth") as string;
+      const ageRaw = formData.get("ageAtPurchaseMonths") as string;
+      const ageAtPurchaseMonths = ageRaw ? parseInt(ageRaw, 10) : undefined;
       const purchaseDateRaw = formData.get("purchaseDate") as string;
       const purchaseWeightKg = parseFloat(formData.get("purchaseWeightKg") as string);
       const purchasePriceKes = parseFloat(formData.get("purchasePriceKes") as string);
+      const purchaseMarket = (formData.get("purchaseMarket") as string)?.trim() || undefined;
       const penId = formData.get("penId") as string;
 
       if (!tagId || !breed || !purchaseDateRaw || isNaN(purchaseWeightKg) || isNaN(purchasePriceKes) || !penId) {
@@ -30,10 +32,11 @@ export default async function NewAnimalPage({
       await createAnimal({
         tagId,
         breed,
-        dateOfBirth: dobRaw ? new Date(dobRaw) : undefined,
+        ageAtPurchaseMonths,
         purchaseDate: new Date(purchaseDateRaw),
         purchaseWeightKg,
         purchasePriceKes,
+        purchaseMarket,
         penId,
       });
     } catch (err: unknown) {
@@ -96,11 +99,15 @@ export default async function NewAnimalPage({
 
         <div>
           <label className="block text-sm font-medium text-zinc-700 mb-1">
-            Date of birth
+            Age at purchase (months)
           </label>
           <input
-            name="dateOfBirth"
-            type="date"
+            name="ageAtPurchaseMonths"
+            type="number"
+            step="1"
+            min="1"
+            max="120"
+            placeholder="e.g. 18"
             className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2.5 text-sm focus:border-zinc-500 focus:outline-none"
           />
         </div>
@@ -113,6 +120,18 @@ export default async function NewAnimalPage({
             name="purchaseDate"
             type="date"
             required
+            className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2.5 text-sm focus:border-zinc-500 focus:outline-none"
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-zinc-700 mb-1">
+            Purchase market
+          </label>
+          <input
+            name="purchaseMarket"
+            type="text"
+            placeholder="e.g. Narok, Bisil, Kajiado"
             className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2.5 text-sm focus:border-zinc-500 focus:outline-none"
           />
         </div>

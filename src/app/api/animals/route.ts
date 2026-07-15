@@ -34,10 +34,11 @@ export async function POST(request: Request) {
   const {
     tagId,
     breed,
-    dateOfBirth,
+    ageAtPurchaseMonths,
     purchaseDate,
     purchaseWeightKg,
     purchasePriceKes,
+    purchaseMarket,
     penId,
   } = body;
 
@@ -54,10 +55,14 @@ export async function POST(request: Request) {
         data: {
           tagId,
           breed,
-          dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : undefined,
+          ageAtPurchaseMonths:
+            ageAtPurchaseMonths != null
+              ? Number.parseInt(String(ageAtPurchaseMonths), 10)
+              : undefined,
           purchaseDate: new Date(purchaseDate),
           purchaseWeightKg: parseFloat(purchaseWeightKg),
           purchasePriceKes: parseFloat(purchasePriceKes),
+          purchaseMarket: purchaseMarket ?? undefined,
         },
       });
       await tx.penAssignment.create({

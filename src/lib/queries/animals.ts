@@ -45,10 +45,11 @@ export async function getAnimal(id: string) {
 export async function createAnimal(data: {
   tagId: string;
   breed: string;
-  dateOfBirth?: Date;
+  ageAtPurchaseMonths?: number;
   purchaseDate: Date;
   purchaseWeightKg: number;
   purchasePriceKes: number;
+  purchaseMarket?: string;
   penId: string;
 }) {
   const { penId, ...animalData } = data;

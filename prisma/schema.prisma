@@ -33,10 +33,11 @@ model Animal {
   updatedAt        DateTime     @updatedAt
   tagId            String       @unique
   breed            String
-  dateOfBirth      DateTime?
+  ageAtPurchaseMonths Int?
   purchaseDate     DateTime
   purchaseWeightKg Float
   purchasePriceKes Float
+  purchaseMarket   String?
   status           AnimalStatus @default(ACTIVE)
   exitDate         DateTime?
   exitWeightKg     Float?

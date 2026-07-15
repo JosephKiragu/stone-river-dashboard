@@ -33,19 +33,33 @@ export default async function AnimalDetailPage({
     animal.purchaseDate
   );
 
+  const age = animal.ageAtPurchaseMonths;
+  let ageDisplay = "—";
+  if (age != null) {
+    const yrs = Math.floor(age / 12);
+    const mo = age % 12;
+    if (yrs === 0) ageDisplay = `${mo} mo`;
+    else if (mo === 0) ageDisplay = `${yrs} yr`;
+    else ageDisplay = `${yrs} yr ${mo} mo`;
+  }
+
   const rows: { label: string; value: string }[] = [
     { label: "Tag ID", value: animal.tagId },
     { label: "Breed", value: animal.breed },
     { label: "Status", value: animal.status },
     {
-      label: "Date of birth",
-      value: animal.dateOfBirth ? formatDate(animal.dateOfBirth) : "—",
+      label: "Age at purchase",
+      value: ageDisplay,
     },
     { label: "Purchase date", value: formatDate(animal.purchaseDate) },
     { label: "Purchase weight", value: `${animal.purchaseWeightKg} kg` },
     {
       label: "Purchase price",
       value: `KES ${animal.purchasePriceKes.toLocaleString("en-KE")}`,
+    },
+    {
+      label: "Purchase market",
+      value: animal.purchaseMarket ?? "—",
     },
     { label: "Current pen", value: currentPen?.name ?? "—" },
     { label: "Days on lot", value: `${daysOnLot}` },
