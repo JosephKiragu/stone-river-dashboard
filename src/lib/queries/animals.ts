@@ -34,6 +34,10 @@ export async function getAnimal(id: string) {
         orderBy: { from: "desc" },
         include: { pen: { select: { id: true, name: true } } },
       },
+      weightLogs: {
+        orderBy: { loggedAt: "asc" },
+        include: { session: { select: { id: true, date: true } } },
+      },
     },
   });
 }

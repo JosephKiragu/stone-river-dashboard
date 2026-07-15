@@ -7,6 +7,7 @@ import { signOut } from "next-auth/react";
 const links = [
   { href: "/dashboard/pens", label: "Pens" },
   { href: "/dashboard/animals", label: "Animals" },
+  { href: "/dashboard/weights", label: "Weights" },
 ];
 
 export function Nav() {

@@ -44,6 +44,7 @@ model Animal {
   exitReason       String?
 
   assignments PenAssignment[]
+  weightLogs  WeightLog[]
 }
 
 enum AnimalStatus {
@@ -65,4 +66,28 @@ model PenAssignment {
 
   @@index([penId, from, to])
   @@index([animalId, to])
+}
+
+// ─── WEIGHTS ──────────────────────────────────────────────────────
+model WeighSession {
+  id         String      @id @default(cuid())
+  createdAt  DateTime    @default(now())
+  date       DateTime    @unique // one session per weigh day; UTC midnight
+  notes      String?
+  weightLogs WeightLog[]
+}
+
+model WeightLog {
+  id        String        @id @default(cuid())
+  createdAt DateTime      @default(now())
+  animalId  String
+  animal    Animal        @relation(fields: [animalId], references: [id])
+  sessionId String?
+  session   WeighSession? @relation(fields: [sessionId], references: [id])
+  weightKg  Float
+  loggedAt  DateTime      // weigh day — UTC midnight; matches WeighSession.date
+  notes     String?
+
+  @@unique([animalId, loggedAt])
+  @@index([animalId, loggedAt])
 }
