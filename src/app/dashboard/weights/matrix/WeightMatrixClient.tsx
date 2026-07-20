@@ -17,6 +17,7 @@ type Row = {
     tagId: string;
     breed: string;
     purchaseWeightKg: number;
+    purchaseDate: Date | string;
     currentPen: Pen | null;
   };
   cells: (number | null)[];
@@ -61,6 +62,22 @@ export function WeightMatrixClient({ matrix }: { matrix: Matrix }) {
   const avgWeeklyGain = avg(filteredRows.map((r) => r.lastIntervalGainKg));
   const avgGainSincePurchase = avg(filteredRows.map((r) => r.totalGainSincePurchaseKg));
   const avgDailyGain = avg(filteredRows.map((r) => r.adg.adgSincePurchase));
+  const avgPurchaseWeight = avg(filteredRows.map((r) => r.animal.purchaseWeightKg));
+
+  // Purchase weight is animal-level, not a shared WeighSession — the header
+  // shows the filtered group's purchase date if they all share one (true for
+  // a single-lot pen), otherwise a generic label rather than one date that
+  // wouldn't apply to every row (e.g. "Full herd" spanning multiple lots).
+  const purchaseDates = new Set(
+    filteredRows.map((r) => new Date(r.animal.purchaseDate).toDateString())
+  );
+  const purchaseHeader =
+    purchaseDates.size === 1 && filteredRows[0]
+      ? new Date(filteredRows[0].animal.purchaseDate).toLocaleDateString("en-KE", {
+          month: "short",
+          day: "numeric",
+        })
+      : "Purchase";
 
   return (
     <div className="space-y-3">
@@ -96,6 +113,7 @@ export function WeightMatrixClient({ matrix }: { matrix: Matrix }) {
             <tr className="bg-zinc-100">
               <th className="text-left px-2 py-1.5 font-semibold text-zinc-700 whitespace-nowrap">Tag</th>
               <th className="text-left px-2 py-1.5 font-semibold text-zinc-700 whitespace-nowrap">Pen</th>
+              <th className="text-right px-2 py-1.5 font-semibold text-zinc-700 whitespace-nowrap">{purchaseHeader}</th>
               {sessions.map((s) => (
                 <th key={s.id} className="text-right px-2 py-1.5 font-semibold text-zinc-700 whitespace-nowrap">
                   {new Date(s.date).toLocaleDateString("en-KE", { month: "short", day: "numeric" })}
@@ -116,6 +134,9 @@ export function WeightMatrixClient({ matrix }: { matrix: Matrix }) {
                 </td>
                 <td className="px-2 py-1.5 text-zinc-500 whitespace-nowrap">
                   {row.animal.currentPen?.name ?? "—"}
+                </td>
+                <td className="px-2 py-1.5 text-right text-zinc-500 whitespace-nowrap">
+                  {row.animal.purchaseWeightKg.toFixed(1)}
                 </td>
                 {row.cells.map((cell, ci) => (
                   <td key={ci} className="px-2 py-1.5 text-right text-zinc-700 whitespace-nowrap">
@@ -146,6 +167,9 @@ export function WeightMatrixClient({ matrix }: { matrix: Matrix }) {
             <tr className="border-t-2 border-zinc-300 bg-zinc-100 font-semibold">
               <td className="px-2 py-1.5 text-zinc-900 whitespace-nowrap">AVERAGE</td>
               <td className="px-2 py-1.5"></td>
+              <td className="px-2 py-1.5 text-right text-zinc-800 whitespace-nowrap">
+                {fmt(avgPurchaseWeight, 1)}
+              </td>
               {avgCells.map((v, ci) => (
                 <td key={ci} className="px-2 py-1.5 text-right text-zinc-800 whitespace-nowrap">
                   {fmt(v, 1)}
