@@ -1,6 +1,8 @@
 import { getWeightMatrix } from "@/lib/queries/weights";
 import { WeightMatrixClient } from "./WeightMatrixClient";
 
+export const dynamic = "force-dynamic";
+
 export default async function MatrixPage() {
   const matrix = await getWeightMatrix();
   return (

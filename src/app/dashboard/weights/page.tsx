@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { listWeighSessions } from "@/lib/queries/weights";
 
+export const dynamic = "force-dynamic";
+
 export default async function WeightsPage() {
   const sessions = await listWeighSessions();
 

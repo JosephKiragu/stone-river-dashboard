@@ -204,6 +204,19 @@ export async function getWeightMatrix() {
           .map((l) => [l.sessionId!, l.weightKg])
       );
       const adg = computeAdg(a.weightLogs, a.purchaseWeightKg, a.purchaseDate);
+
+      // Most recent interval gain — the two latest logs, whatever the actual
+      // gap between them is (weekly cadence in practice, but not enforced).
+      let lastIntervalGainKg: number | null = null;
+      if (a.weightLogs.length >= 2) {
+        const prev = a.weightLogs[a.weightLogs.length - 2];
+        const latest = a.weightLogs[a.weightLogs.length - 1];
+        lastIntervalGainKg = latest.weightKg - prev.weightKg;
+      }
+
+      const totalGainSincePurchaseKg =
+        adg.latestWeightKg !== null ? adg.latestWeightKg - a.purchaseWeightKg : null;
+
       return {
         animal: {
           id: a.id,
@@ -215,6 +228,8 @@ export async function getWeightMatrix() {
         },
         cells: sessionIds.map((sid) => logsBySession.get(sid) ?? null),
         adg,
+        lastIntervalGainKg,
+        totalGainSincePurchaseKg,
       };
     }),
   };

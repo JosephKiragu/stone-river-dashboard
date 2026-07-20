@@ -19,6 +19,8 @@ type Row = {
   };
   cells: (number | null)[];
   adg: AdgResult;
+  lastIntervalGainKg: number | null;
+  totalGainSincePurchaseKg: number | null;
 };
 type Matrix = { sessions: Session[]; rows: Row[] };
 
@@ -45,18 +47,14 @@ export function WeightMatrixClient({ matrix }: { matrix: Matrix }) {
                 {new Date(s.date).toLocaleDateString("en-KE", { month: "short", day: "numeric" })}
               </th>
             ))}
-            <th className="text-right px-2 py-1.5 font-semibold text-zinc-700 whitespace-nowrap">ADG on-feed</th>
+            <th className="text-right px-2 py-1.5 font-semibold text-zinc-700 whitespace-nowrap">Weekly gain (kg)</th>
+            <th className="text-right px-2 py-1.5 font-semibold text-zinc-700 whitespace-nowrap">Avg daily gain (on-feed)</th>
             <th className="text-right px-2 py-1.5 font-semibold text-zinc-700 whitespace-nowrap">ADG since purchase</th>
-            <th className="text-right px-2 py-1.5 font-semibold text-zinc-700 whitespace-nowrap">Gain (kg)</th>
+            <th className="text-right px-2 py-1.5 font-semibold text-zinc-700 whitespace-nowrap">Total gain (kg)</th>
           </tr>
         </thead>
         <tbody>
           {rows.map((row, i) => {
-            const gain =
-              row.adg.latestWeightKg !== null
-                ? row.adg.latestWeightKg - row.animal.purchaseWeightKg
-                : null;
-
             return (
               <tr key={row.animal.id} className={i % 2 === 0 ? "bg-white" : "bg-zinc-50"}>
                 <td className="px-2 py-1.5 font-medium text-zinc-900 whitespace-nowrap">
@@ -72,6 +70,9 @@ export function WeightMatrixClient({ matrix }: { matrix: Matrix }) {
                     {cell !== null ? cell.toFixed(1) : "—"}
                   </td>
                 ))}
+                <td className="px-2 py-1.5 text-right text-zinc-700 whitespace-nowrap">
+                  {fmt(row.lastIntervalGainKg, 1)}
+                </td>
                 <td className={`px-2 py-1.5 text-right font-medium whitespace-nowrap ${
                   row.adg.adgOnFeed === null
                     ? "text-zinc-400"
@@ -87,7 +88,7 @@ export function WeightMatrixClient({ matrix }: { matrix: Matrix }) {
                   {fmt(row.adg.adgSincePurchase, 2)}
                 </td>
                 <td className="px-2 py-1.5 text-right text-zinc-700 whitespace-nowrap">
-                  {fmt(gain, 1)}
+                  {fmt(row.totalGainSincePurchaseKg, 1)}
                 </td>
               </tr>
             );
