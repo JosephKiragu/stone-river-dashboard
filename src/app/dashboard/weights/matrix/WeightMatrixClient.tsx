@@ -101,8 +101,8 @@ export function WeightMatrixClient({ matrix }: { matrix: Matrix }) {
                   {new Date(s.date).toLocaleDateString("en-KE", { month: "short", day: "numeric" })}
                 </th>
               ))}
-              <th className="text-right px-2 py-1.5 font-semibold text-zinc-700 whitespace-nowrap">Weekly gain (kg)</th>
-              <th className="text-right px-2 py-1.5 font-semibold text-zinc-700 whitespace-nowrap">Gain since purchase (kg)</th>
+              <th className="text-right px-2 py-1.5 font-semibold text-zinc-700 whitespace-nowrap">Current weeks gain</th>
+              <th className="text-right px-2 py-1.5 font-semibold text-zinc-700 whitespace-nowrap">Total gain</th>
               <th className="text-right px-2 py-1.5 font-semibold text-zinc-700 whitespace-nowrap">Daily gain (kg/day)</th>
             </tr>
           </thead>
