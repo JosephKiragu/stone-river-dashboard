@@ -54,12 +54,18 @@ export default async function WeightsPage() {
         ))}
       </ul>
 
-      <div className="pt-2">
+      <div className="pt-2 flex gap-4">
         <Link
           href="/dashboard/weights/matrix"
           className="text-sm text-zinc-500 hover:text-zinc-700 underline underline-offset-2"
         >
           View weighing matrix →
+        </Link>
+        <Link
+          href="/dashboard/weights/stats"
+          className="text-sm text-zinc-500 hover:text-zinc-700 underline underline-offset-2"
+        >
+          View stats →
         </Link>
       </div>
     </div>
