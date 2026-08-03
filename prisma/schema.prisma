@@ -92,3 +92,37 @@ model WeightLog {
   @@unique([animalId, loggedAt])
   @@index([animalId, loggedAt])
 }
+
+// ─── FEED CATALOGUE ───────────────────────────────────────────────
+model FeedItem {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  name      String   @unique
+  unit      FeedUnit
+  kgPerUnit Float // 1.0 for KG; e.g. 20 for a bale (D8)
+  isActive  Boolean  @default(true)
+
+  stockEntries FeedStockEntry[]
+}
+
+enum FeedUnit {
+  KG
+  BALES
+  BAGS
+}
+
+// ─── FEED STOCK ENTRIES (purchases) ───────────────────────────────
+model FeedStockEntry {
+  id           String   @id @default(cuid())
+  createdAt    DateTime @default(now())
+  feedItemId   String
+  feedItem     FeedItem @relation(fields: [feedItemId], references: [id])
+  quantity     Float // Display unit
+  quantityKg   Float // Computed server-side: quantity × kgPerUnit (D8)
+  costTotal    Float // KES
+  purchaseDate DateTime // UTC midnight
+  supplier     String?
+
+  @@index([feedItemId, purchaseDate])
+}
